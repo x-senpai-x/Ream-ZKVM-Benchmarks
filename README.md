@@ -1,7 +1,7 @@
 # Ream-Beacon-State-Transition-Functions-ZKVM-Benchmarks
 **State Transition Function (STF)** is the core logic that updates Ethereum's consensus state:
-![alt text](image-2.png)
 
+![alt text](https://github.com/user-attachments/assets/6c746924-f462-4d4a-8a70-f6167f851144)
 ```
 STF: (BeaconState, SignedBeaconBlock) → BeaconState'
 ```
@@ -11,7 +11,7 @@ STF: (BeaconState, SignedBeaconBlock) → BeaconState'
 - **Processing:** Validation, attestations, slashings, committee updates
 - **Output:** Updated `BeaconState`
 ---
-![alt text](image-3.png)
+![alt text](https://github.com/user-attachments/assets/b864cb44-ee6e-47e8-9546-2cb302e12b1e)
 
 ```rust
 state_transition(state: &mut BeaconState, block: &SignedBeaconBlock) - A wrapper of process_slots(), verify_block_signature() and process_block()
