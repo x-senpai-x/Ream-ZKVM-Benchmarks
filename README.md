@@ -1,5 +1,6 @@
 # Ream-Beacon-State-Transition-Functions-ZKVM-Benchmarks
 **State Transition Function (STF)** is the core logic that updates Ethereum's consensus state:
+![alt text](image-2.png)
 
 ```
 STF: (BeaconState, SignedBeaconBlock) → BeaconState'
@@ -10,7 +11,7 @@ STF: (BeaconState, SignedBeaconBlock) → BeaconState'
 - **Processing:** Validation, attestations, slashings, committee updates
 - **Output:** Updated `BeaconState`
 ---
-
+![alt text](image-3.png)
 
 ```rust
 state_transition(state: &mut BeaconState, block: &SignedBeaconBlock) - A wrapper of process_slots(), verify_block_signature() and process_block()
@@ -55,8 +56,14 @@ fn process_block(state: &mut BeaconState, block: &SignedBeaconBlock) {
 }
 
 ```
-[Consensus-specs](https://github.com/ethereum/consensus-spec-tests/tree/master/tests/mainnet/electra) provides test suites with pre/post state and input
 
+The benchmarks have been performed on MacBook Air M2 16 GB RAMand are based on the `electra` test suite 
 
+[Consensus-specs](https://github.com/ethereum/consensus-spec-tests/tree/master/tests/mainnet/electra) provides test suites with pre/post state and input.
 
-
+The zkvms used for benchmarking are 
+- [SP1](https://github.com/succinctlabs/sp1)
+- [RiscZero](https://github.com/risc0/risc0)
+- [Pico](https://github.com/brevis-network/pico/)
+- [Jolt](https://github.com/a16z/jolt/)
+- OpenVM
