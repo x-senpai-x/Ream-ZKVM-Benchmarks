@@ -67,3 +67,12 @@ The zkvms used for benchmarking are
 - [Pico](https://github.com/brevis-network/pico/)
 - [Jolt](https://github.com/a16z/jolt/)
 - OpenVM
+
+Here's the ongoing work 
+- [RiscZero](https://github.com/ReamLabs/consenzero-bench/pull/25)
+- [Pico](https://github.com/x-senpai-x/consenpico-bench/tree/main/app)
+- [Jolt](https://github.com/x-senpai-x/consenJolt/tree/bump-twist/shout)
+- [Zisk](https://github.com/x-senpai-x/consenzisk-bench)
+- [SP1](https://github.com/ReamLabs/consensp1us/tree/main/lib)
+- [OpenVM](https://github.com/DimitriosMitsios/openvm-ream/tree/main/)
+
