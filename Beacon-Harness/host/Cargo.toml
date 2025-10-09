@@ -1,0 +1,32 @@
+[package]
+version = "0.1.0"
+name = "consenzero-script"
+edition = "2021"
+
+[[bin]]
+name = "consenzero-script"
+path = "src/bin/main.rs"
+
+[dependencies]
+clap = { version = "4.0", features = ["derive", "env"] }
+derive_more = { version = "2.0.1", features = ["full"] }
+dotenv = "0.15.0"
+hex = "0.4.3"
+methods = { path = "../guest/risc0/methods" }
+sp1-sdk = "5.2.2"
+risc0-zkvm = { version = "3.0.3" }
+serde = { version = "1.0", default-features = false, features = ["derive"] }
+serde_json = { version = "1.0.139", default-features = false, features = ["alloc"] }
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tree_hash = { workspace = true }
+
+# Ethereum dependencies
+ethereum_ssz = { workspace = true }
+
+# Ream dependencies
+ream-consensus = { workspace = true }
+ream-lib = { path = "../lib" }
+
+[build-dependencies]
+sp1-build = "5.2.2"
