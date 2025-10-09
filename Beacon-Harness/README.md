@@ -1,12 +1,13 @@
 # Beacon Harness
 
-`Beacon Harness` is a unified benchmark suite for Ethereum consensus state transition functions supporting both [RISC Zero zkVM](https://github.com/risc0/risc0) and [SP1](https://github.com/succinctlabs/sp1). It leverages [ream](https://github.com/ReamLabs/ream) to provide comprehensive performance metrics for consensus operations.
+`Beacon Harness` is a unified benchmark suite for Ethereum consensus state transition functions supporting [RISC Zero zkVM](https://github.com/risc0/risc0), [SP1](https://github.com/succinctlabs/sp1), and [ZISK](https://github.com/0xPolygonHermez/zisk). It leverages [ream](https://github.com/ReamLabs/ream) to provide comprehensive performance metrics for consensus operations.
 
 ## Requirements
 
 - [Rust](https://rustup.rs/)
 - [RISC Zero](https://dev.risczero.com/api/getting-started) (for RISC Zero backend)
 - [SP1](https://docs.succinct.xyz/getting-started/install.html) (for SP1 backend)
+- [ZISK](https://github.com/0xPolygonHermez/zisk) (for ZISK backend)
 
 ## Running the Project
 
@@ -21,7 +22,7 @@ make download
 
 ### Running Benchmarks
 
-You can run benchmarks using either RISC Zero or SP1 as the zkVM backend.
+You can run benchmarks using RISC Zero, SP1, or ZISK as the zkVM backend.
 
 #### Run All Benchmarks
 
@@ -35,6 +36,11 @@ With RISC Zero:
 make r0
 ```
 
+With ZISK:
+```sh
+make zisk
+```
+
 With default backend (RISC Zero):
 ```sh
 make all
@@ -46,6 +52,7 @@ Run all block processing benchmarks:
 ```sh
 make sp1-block-all    # Using SP1
 make r0-block-all     # Using RISC Zero
+make zisk-block-all   # Using ZISK
 make block-all        # Using default backend
 ```
 
@@ -53,6 +60,7 @@ Run all epoch processing benchmarks:
 ```sh
 make sp1-epoch-all    # Using SP1
 make r0-epoch-all     # Using RISC Zero
+make zisk-epoch-all   # Using ZISK
 make epoch-all        # Using default backend
 ```
 
@@ -60,9 +68,10 @@ make epoch-all        # Using default backend
 
 Run a specific block operation:
 ```sh
-make run-block-<OPERATION_NAME>              # Using default backend
-make run-block-<OPERATION_NAME> ZKVM=sp1     # Using SP1
+make run-block-<OPERATION_NAME>                 # Using default backend
+make run-block-<OPERATION_NAME> ZKVM=sp1        # Using SP1
 make run-block-<OPERATION_NAME> ZKVM=risc-zero  # Using RISC Zero
+make run-block-<OPERATION_NAME> ZKVM=zisk       # Using ZISK
 ```
 
 Available block operations:
@@ -79,9 +88,10 @@ Available block operations:
 
 Run a specific epoch processing operation:
 ```sh
-make run-epoch-<OPERATION_NAME>              # Using default backend
-make run-epoch-<OPERATION_NAME> ZKVM=sp1     # Using SP1
+make run-epoch-<OPERATION_NAME>                 # Using default backend
+make run-epoch-<OPERATION_NAME> ZKVM=sp1        # Using SP1
 make run-epoch-<OPERATION_NAME> ZKVM=risc-zero  # Using RISC Zero
+make run-epoch-<OPERATION_NAME> ZKVM=zisk       # Using ZISK
 ```
 
 Available epoch operations:
@@ -105,14 +115,23 @@ Available epoch operations:
 # Run attestation benchmark with SP1
 make run-block-attestation ZKVM=sp1
 
+# Run attestation benchmark with ZISK
+make run-block-attestation ZKVM=zisk
+
 # Run all block benchmarks with RISC Zero
 make r0-block-all
+
+# Run all block benchmarks with ZISK
+make zisk-block-all
 
 # Run justification benchmark with default backend
 make run-epoch-justification_and_finalization
 
 # Run all benchmarks with SP1
 make sp1
+
+# Run all benchmarks with ZISK
+make zisk
 ```
 
 ### Other Commands
@@ -145,5 +164,4 @@ make help
 ## Notes
 
 - The `all` target excludes `execution_payload` (not implemented) and `withdrawals` (incompatible with BeaconState workaround) from block operations
-- RISC Zero runs with `RISC0_DEV_MODE=1` enabled for faster development iteration
-- SP1 benchmarks do not include RISC Zero-specific environment variables
+- Zisk only has total execution time available for benchmarks, work is ongoing to capture detailed cycle counts

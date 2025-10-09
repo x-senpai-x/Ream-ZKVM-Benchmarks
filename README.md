@@ -64,15 +64,12 @@ The benchmarks have been performed on MacBook Air M2 16 GB RAMand are based on t
 The zkvms used for benchmarking are 
 - [SP1](https://github.com/succinctlabs/sp1)
 - [RiscZero](https://github.com/risc0/risc0)
+- [Zisk](https://github.com/0xPolygonHermez/zisk)
 - [Pico](https://github.com/brevis-network/pico/)
 - [Jolt](https://github.com/a16z/jolt/)
-- OpenVM
 
-Here's the ongoing work 
-- [RiscZero](https://github.com/ReamLabs/consenzero-bench/pull/25)
+Here's the ongoing work for Pico, Jolt and OpenVm integration:
 - [Pico](https://github.com/x-senpai-x/consenpico-bench/tree/main/app)
 - [Jolt](https://github.com/x-senpai-x/consenJolt/tree/bump-twist/shout)
-- [Zisk](https://github.com/x-senpai-x/consenzisk-bench)
-- [SP1](https://github.com/ReamLabs/consensp1us/tree/main/lib)
 - [OpenVM](https://github.com/DimitriosMitsios/openvm-ream/tree/main/)
 
