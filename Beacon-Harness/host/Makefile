@@ -15,16 +15,70 @@ ZKVM ?= risc-zero
 RISC0_DEV_MODE = 1
 RUST_BACKTRACE = full
 
-.PHONY: all download run clean $(addprefix run-block-, $(BLOCK_OPERATIONS)) $(addprefix run-epoch-, $(EPOCH_OPERATIONS)) block-all epoch-all sp1-block-all sp1-epoch-all risc-zero-block-all risc-zero-epoch-all
+.PHONY: all help build test download run clean sp1 r0 risc-zero risc-zero-block-all risc-zero-epoch-all $(addprefix run-block-, $(BLOCK_OPERATIONS)) $(addprefix run-epoch-, $(EPOCH_OPERATIONS)) block-all epoch-all sp1-block-all sp1-epoch-all r0-block-all r0-epoch-all
+
+# Default target shows help
+help:
+	@echo "Beacon Harness Makefile"
+	@echo ""
+	@echo "Usage:"
+	@echo "  make <target> [ZKVM=sp1|risc-zero]"
+	@echo ""
+	@echo "Targets:"
+	@echo "  help              Show this help message"
+	@echo "  build             Build the project"
+	@echo "  test              Run tests"
+	@echo "  download          Download Ethereum Foundation test data"
+	@echo "  clean             Clean up generated files"
+	@echo ""
+	@echo "Run all benchmarks:"
+	@echo "  all               Run all benchmarks (excludes execution_payload, withdrawals)"
+	@echo "  block-all         Run all block processing benchmarks"
+	@echo "  epoch-all         Run all epoch processing benchmarks"
+	@echo ""
+	@echo "zkVM-specific targets:"
+	@echo "  sp1               Run all SP1 benchmarks"
+	@echo "  sp1-block-all     Run all block benchmarks with SP1"
+	@echo "  sp1-epoch-all     Run all epoch benchmarks with SP1"
+	@echo "  r0                Run all RISC Zero benchmarks"
+	@echo "  r0-block-all      Run all block benchmarks with RISC Zero"
+	@echo "  r0-epoch-all      Run all epoch benchmarks with RISC Zero"
+	@echo ""
+	@echo "Individual operations:"
+	@echo "  Block operations: $(BLOCK_OPERATIONS)"
+	@echo "  Epoch operations: $(EPOCH_OPERATIONS)"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make run-block-attestation              # Run attestation with default zkVM"
+	@echo "  make run-block-attestation ZKVM=sp1     # Run attestation with SP1"
+	@echo "  make sp1-block-all                      # Run all block benchmarks with SP1"
+	@echo "  make r0-epoch-all                       # Run all epoch benchmarks with RISC Zero"
+	@echo ""
 
 # run-block-execution_payload (not implemented) and run-block-withdrawals (incompatible with BeaconState workaround) are excluded
 all: download $(addprefix run-block-, $(filter-out execution_payload withdrawals, $(BLOCK_OPERATIONS))) $(addprefix run-epoch-, $(EPOCH_OPERATIONS))
+
+# Build the project
+build:
+	@echo "Building project..."
+	@cargo build --release
+	@echo "Build complete."
+
+# Run tests
+test:
+	@echo "Running tests..."
+	@cargo test
+	@echo "Tests complete."
 
 # Run all block processing benchmarks
 block-all: $(addprefix run-block-, $(BLOCK_OPERATIONS))
 
 # Run all epoch processing benchmarks
 epoch-all: $(addprefix run-epoch-, $(EPOCH_OPERATIONS))
+
+# Run all benchmarks with SP1
+sp1:
+	@$(MAKE) all ZKVM=sp1
 
 # Run all block processing benchmarks with SP1
 sp1-block-all:
@@ -34,13 +88,26 @@ sp1-block-all:
 sp1-epoch-all:
 	@$(MAKE) epoch-all ZKVM=sp1
 
+# Run all benchmarks with RISC Zero
+r0:
+	@$(MAKE) all ZKVM=risc-zero
+
+# Alias for r0
+risc-zero: r0
+
 # Run all block processing benchmarks with RISC Zero
-risc-zero-block-all:
+r0-block-all:
 	@$(MAKE) block-all ZKVM=risc-zero
 
+# Alias for r0-block-all
+risc-zero-block-all: r0-block-all
+
 # Run all epoch processing benchmarks with RISC Zero
-risc-zero-epoch-all:
+r0-epoch-all:
 	@$(MAKE) epoch-all ZKVM=risc-zero
+
+# Alias for r0-epoch-all
+risc-zero-epoch-all: r0-epoch-all
 
 download:
 	@echo "Running download script..."
@@ -59,7 +126,8 @@ $(addprefix run-block-, $(BLOCK_OPERATIONS)): run-block-%: $(EXTRACT_DIR)
 	@echo "##################################################"
 	@echo "Running block benchmarks for $* using $(ZKVM)..."
 	@echo "##################################################"
-	@NO_COLOR=1 RISC0_DEV_MODE=$(RISC0_DEV_MODE) RUST_BACKTRACE=$(RUST_BACKTRACE) \
+	@NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
+		$(if $(filter risc-zero,$(ZKVM)),RISC0_DEV_MODE=$(RISC0_DEV_MODE),) \
 		cargo run --release -- \
 			--zkvm $(ZKVM) \
 			--excluded-cases multi_proposer_index_iterations \
@@ -76,7 +144,8 @@ $(addprefix run-epoch-, $(EPOCH_OPERATIONS)): run-epoch-%: $(EXTRACT_DIR)
 	@echo "##################################################"
 	@echo "Running epoch processing benchmarks for $* using $(ZKVM)..."
 	@echo "##################################################"
-	@NO_COLOR=1 RISC0_DEV_MODE=$(RISC0_DEV_MODE) RUST_BACKTRACE=$(RUST_BACKTRACE) \
+	@NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
+		$(if $(filter risc-zero,$(ZKVM)),RISC0_DEV_MODE=$(RISC0_DEV_MODE),) \
 		cargo run --release -- \
 			--zkvm $(ZKVM) \
 			epoch $* \
@@ -90,4 +159,6 @@ clean:
 	@rm -f $(TARGET)
 	@rm -rf $(EXTRACT_DIR)
 	@rm -rf $(LOGS_DIR)
+	@rm -rf $(SUMMARIES_DIR)
+	@cargo clean
 	@echo "Clean up complete."
