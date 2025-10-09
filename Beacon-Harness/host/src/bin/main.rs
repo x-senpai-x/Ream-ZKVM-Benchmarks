@@ -3,8 +3,11 @@ use ream_consensus::electra::beacon_state::BeaconState;
 use ream_lib::{file::ssz_from_file, input::OperationInput, ssz::from_ssz_bytes};
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts};
 use sp1_sdk::{ProverClient, SP1Stdin, include_elf};
+use serde::{Serialize, Deserialize};
 
+use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 use std::time::Instant;
 use tracing::info;
 use tree_hash::{Hash256, TreeHash};
@@ -19,11 +22,19 @@ use cli::{
 use methods::{CONSENSUS_STF_ELF, CONSENSUS_STF_ID};
 pub const OPERATIONS_ELF: &[u8] = include_elf!("ream-operations");
 
+/// Input structure for ZISK VM
+#[derive(Serialize, Deserialize)]
+pub struct ZiskInput {
+    pre_state_ssz_bytes: Vec<u8>,
+    operation_input: Vec<u8>,
+}
+
 /// Supported zkVM backends
 #[derive(Debug, Clone, Copy, clap::ValueEnum)]
 pub enum ZkVm {
     Sp1,
     RiscZero,
+    Zisk,
 }
 
 /// The arguments for the command.
@@ -114,6 +125,9 @@ fn run_tests<T: OperationHandler>(
             }
             ZkVm::RiscZero => {
                 run_risczero_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir);
+            }
+            ZkVm::Zisk => {
+                run_zisk_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir);
             }
         }
 
@@ -242,6 +256,95 @@ fn run_risczero_test<T: OperationHandler>(
     }
 }
 
+fn run_zisk_test<T: OperationHandler>(
+    pre_state_ssz_bytes: &[u8],
+    input: &OperationInput,
+    test_case: &str,
+    operation: &T,
+    compare_specs: bool,
+    compare_recompute: bool,
+    case_dir: &PathBuf,
+) {
+    // Build the ZISK guest code
+    info!("----- Building ZISK Guest -----");
+
+    // Get HOME directory for cargo-zisk path
+    let home = std::env::var("HOME").expect("HOME environment variable not set");
+    let cargo_zisk_path = format!("{}/.zisk/bin/cargo-zisk", home);
+
+    let build_guest_result = Command::new(&cargo_zisk_path)
+        .args(["build", "--release"])
+        .current_dir("../guest/zisk")
+        .status()
+        .expect("Failed to build guest code");
+
+    if !build_guest_result.success() {
+        eprintln!("Guest code build failed!");
+        std::process::exit(1);
+    }
+
+    // Write input to file for ZISK guest
+    let build_dir = PathBuf::from("../guest/zisk/build");
+    if !build_dir.exists() {
+        info!("Creating build directory at {:?}", build_dir);
+        fs::create_dir_all(&build_dir).expect("Failed to create build directory");
+    }
+    let input_path = build_dir.join("input.bin");
+
+    write_zisk_input(
+        pre_state_ssz_bytes.to_vec(),
+        bincode::serialize(&input).unwrap(),
+        input_path.to_str().unwrap(),
+    ).expect("Failed to write ZISK input");
+
+    info!("Input written to {:?}", input_path);
+    info!("----- Cycle Tracker Start -----");
+
+    // Execute ZISK VM
+    let ziskemu_path = format!("{}/.zisk/bin/ziskemu", home);
+    let output = Command::new(&ziskemu_path)
+        .args([
+            "-e",
+            "../target/riscv64ima-zisk-zkvm-elf/release/consenzisk_guest",
+            "-i",
+            input_path.to_str().unwrap(),
+            "-m",
+            "-x",
+        ])
+        .output()
+        .expect("Failed to run ZISK VM");
+
+    if !output.status.success() {
+        eprintln!(
+            "ZISK execution failed for test case {}!\n{}",
+            test_case,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        std::process::exit(1);
+    }
+
+    // Parse output from ZISK guest
+    let zisk_output = String::from_utf8_lossy(&output.stdout);
+    info!("ZISK output for {}: {}", test_case, zisk_output);
+
+    let new_state_root = parse_state_root_from_hex(&zisk_output);
+
+    //
+    // Compare proofs against references (consensus-spec-tests or recompute on host)
+    //
+
+    if compare_specs {
+        info!("Comparing the root against consensus-spec-tests post_state");
+        info!("new_state_root: {}", new_state_root);
+        assert_state_root_matches_specs(&new_state_root, &pre_state_ssz_bytes, &case_dir);
+    }
+
+    if compare_recompute {
+        info!("Comparing the root by recomputing on host");
+        assert_state_root_matches_recompute(&new_state_root, &pre_state_ssz_bytes, &input);
+    }
+}
+
 fn setup_log() {
     if std::env::var("RUST_LOG").is_err() {
         std::env::set_var("RUST_LOG", "info");
@@ -313,4 +416,36 @@ fn assert_state_root_matches_recompute(
 
     assert_eq!(*new_state_root, recomputed_state_root);
     info!("Execution is correct! State roots match host's recomputed state root.");
+}
+
+fn write_zisk_input(
+    pre_state_ssz_bytes: Vec<u8>,
+    operation_input: Vec<u8>,
+    input_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let zisk_input = ZiskInput {
+        pre_state_ssz_bytes,
+        operation_input,
+    };
+
+    let serialized_input = bincode::serialize(&zisk_input)?;
+    std::fs::write(input_path, serialized_input)?;
+    Ok(())
+}
+
+fn parse_state_root_from_hex(output: &str) -> Hash256 {
+    // Find the hex string in the output (64 hex characters)
+    let hex_str = output
+        .lines()
+        .find(|line| line.len() == 64 && line.chars().all(|c| c.is_ascii_hexdigit()))
+        .expect("Failed to find state root hex string in output");
+
+    // Parse hex string to bytes
+    let mut bytes = [0u8; 32];
+    for i in 0..32 {
+        bytes[i] = u8::from_str_radix(&hex_str[i * 2..i * 2 + 2], 16)
+            .expect("Failed to parse hex byte");
+    }
+
+    Hash256::from_slice(&bytes)
 }

@@ -10,19 +10,19 @@ SORT_SCRIPT = ./subscripts/sort_table.sh
 BLOCK_OPERATIONS = attestation attester_slashing block_header bls_to_execution_change deposit execution_payload proposer_slashing sync_aggregate voluntary_exit withdrawals
 EPOCH_OPERATIONS = justification_and_finalization inactivity_updates rewards_and_penalties registry_updates slashings eth1_data_reset pending_deposits pending_consolidations effective_balance_updates slashings_reset randao_mixes_reset historical_summaries_update participation_flag_updates
 
-# zkVM backend: sp1 or risc-zero (default: risc-zero)
+# zkVM backend: sp1, risc-zero, or zisk (default: risc-zero)
 ZKVM ?= risc-zero
 RISC0_DEV_MODE = 1
 RUST_BACKTRACE = full
 
-.PHONY: all help build test download run clean sp1 r0 risc-zero risc-zero-block-all risc-zero-epoch-all $(addprefix run-block-, $(BLOCK_OPERATIONS)) $(addprefix run-epoch-, $(EPOCH_OPERATIONS)) block-all epoch-all sp1-block-all sp1-epoch-all r0-block-all r0-epoch-all
+.PHONY: all help build test download run clean sp1 r0 risc-zero risc-zero-block-all risc-zero-epoch-all zisk zisk-block-all zisk-epoch-all $(addprefix run-block-, $(BLOCK_OPERATIONS)) $(addprefix run-epoch-, $(EPOCH_OPERATIONS)) block-all epoch-all sp1-block-all sp1-epoch-all r0-block-all r0-epoch-all
 
 # Default target shows help
 help:
 	@echo "Beacon Harness Makefile"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make <target> [ZKVM=sp1|risc-zero]"
+	@echo "  make <target> [ZKVM=sp1|risc-zero|zisk]"
 	@echo ""
 	@echo "Targets:"
 	@echo "  help              Show this help message"
@@ -43,6 +43,9 @@ help:
 	@echo "  r0                Run all RISC Zero benchmarks"
 	@echo "  r0-block-all      Run all block benchmarks with RISC Zero"
 	@echo "  r0-epoch-all      Run all epoch benchmarks with RISC Zero"
+	@echo "  zisk              Run all ZISK benchmarks"
+	@echo "  zisk-block-all    Run all block benchmarks with ZISK"
+	@echo "  zisk-epoch-all    Run all epoch benchmarks with ZISK"
 	@echo ""
 	@echo "Individual operations:"
 	@echo "  Block operations: $(BLOCK_OPERATIONS)"
@@ -51,8 +54,10 @@ help:
 	@echo "Examples:"
 	@echo "  make run-block-attestation              # Run attestation with default zkVM"
 	@echo "  make run-block-attestation ZKVM=sp1     # Run attestation with SP1"
+	@echo "  make run-block-attestation ZKVM=zisk    # Run attestation with ZISK"
 	@echo "  make sp1-block-all                      # Run all block benchmarks with SP1"
 	@echo "  make r0-epoch-all                       # Run all epoch benchmarks with RISC Zero"
+	@echo "  make zisk-block-all                     # Run all block benchmarks with ZISK"
 	@echo ""
 
 # run-block-execution_payload (not implemented) and run-block-withdrawals (incompatible with BeaconState workaround) are excluded
@@ -108,6 +113,18 @@ r0-epoch-all:
 
 # Alias for r0-epoch-all
 risc-zero-epoch-all: r0-epoch-all
+
+# Run all benchmarks with ZISK
+zisk:
+	@$(MAKE) all ZKVM=zisk
+
+# Run all block processing benchmarks with ZISK
+zisk-block-all:
+	@$(MAKE) block-all ZKVM=zisk
+
+# Run all epoch processing benchmarks with ZISK
+zisk-epoch-all:
+	@$(MAKE) epoch-all ZKVM=zisk
 
 download:
 	@echo "Running download script..."

@@ -1,0 +1,12 @@
+[package]
+name = "consenzisk_guest"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ream-lib = { path = "../../lib" }
+ream-consensus = { workspace = true }
+tree_hash = { workspace = true }
+bincode = { workspace = true }
+ziskos = { git = "https://github.com/0xPolygonHermez/zisk.git" }
+serde = { version = "1.0", features = ["derive"] }

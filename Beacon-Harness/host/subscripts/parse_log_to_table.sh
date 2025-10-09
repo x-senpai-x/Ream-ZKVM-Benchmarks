@@ -34,12 +34,18 @@ BEGIN {
     total_cycles = 0;
     execution_time = 0;
     execution_time_host_call = 0;
+    is_zisk = 0;
 }
 
 /\[.*\] Test case:/ {
     op = $4;
     gsub(/[\[\]]/, "", op)
     test_case = $NF;
+}
+
+# ZISK format detection - look for eprintln format
+/read-inputs:start/ {
+    is_zisk = 1;
 }
 
 # RISC Zero format (start/end markers)
@@ -135,6 +141,45 @@ BEGIN {
     execution_time_host_call = $NF;
 }
 
+# ZISK format - process_rom() steps and duration
+/process_rom\(\) steps=/ {
+    for (i = 1; i <= NF; i++) {
+        if ($i ~ /^steps=/) {
+            gsub(/steps=/, "", $i);
+            total_cycles = $i;
+        }
+        if ($i ~ /^duration=/) {
+            gsub(/duration=/, "", $i);
+            execution_time_host_call = $i;
+        }
+    }
+}
+
+# ZISK format - timing from eprintln
+/read-inputs:/ && /start/ {
+    zisk_read_inputs_start = 1;
+}
+
+/deserialize-pre-state-ssz:/ && /start/ {
+    zisk_deserialize_pre_state_start = 1;
+}
+
+/deserialize-operation-input:/ && /start/ {
+    zisk_read_operation_start = 1;
+}
+
+/process-operation:/ && /start/ {
+    zisk_process_start = 1;
+}
+
+/merkleize-operation:/ && /start/ {
+    zisk_merkleize_start = 1;
+}
+
+/output-state-root:/ && /start/ {
+    zisk_output_start = 1;
+}
+
 /----- Cycle Tracker End -----/ {
     # Parse execution_time_host_call to get seconds as a float
     exec_time_seconds = 0;
@@ -143,7 +188,12 @@ BEGIN {
     }
 
     # Determine which format was used and calculate accordingly
-    if (read_pre_state_ssz_cycles > 0) {
+    if (is_zisk) {
+        # ZISK format - for now, we report total cycles and execution time
+        # ZISK does not provide per-operation cycle breakdown in the same way
+        # We mark individual operations as N/A since ZISK uses eprintln markers
+        printf "%s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %d | %s | %s |\n", op, test_case, "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", "N/A", total_cycles, execution_time, execution_time_host_call >> "'$OUTPUT_FILE'"
+    } else if (read_pre_state_ssz_cycles > 0) {
         # SP1 format
         # Calculate execution time for each operation
         read_pre_state_ssz_time = (total_cycles > 0) ? sprintf("%.6fs", (read_pre_state_ssz_cycles * exec_time_seconds) / total_cycles) : "0s";
@@ -199,5 +249,6 @@ BEGIN {
     total_cycles = 0;
     execution_time = 0;
     execution_time_host_call = 0;
+    is_zisk = 0;
 }
 ' $LOG_FILE
