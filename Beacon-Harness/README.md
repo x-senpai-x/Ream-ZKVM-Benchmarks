@@ -124,7 +124,6 @@ Available epoch operations:
 ```sh
 # Run attestation benchmark with SP1
 make run-block-attestation ZKVM=sp1
-
 # Run attestation benchmark with Pico
 make run-block-attestation ZKVM=pico
 
@@ -200,6 +199,7 @@ make pico
 
 ## Notes
 
+- The build system uses feature flags - only the targeted ZKVM is compiled (e.g., `ZKVM=sp1` compiles only SP1)
 - The `all` target excludes `execution_payload` (not implemented) and `withdrawals` (incompatible with BeaconState workaround) from block operations
 - Zisk only has total execution time available for benchmarks, work is ongoing to capture detailed cycle counts
 - Pico is an optional feature and requires Rust nightly. Other zkVMs work with stable Rust.

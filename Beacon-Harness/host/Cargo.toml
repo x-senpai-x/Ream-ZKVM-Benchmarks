@@ -10,8 +10,8 @@ path = "src/bin/main.rs"
 [dependencies]
 
 #zkvms
-risc0-zkvm = { version = "3.0.3" }
-sp1-sdk = "5.2.2"
+risc0-zkvm = { version = "3.0.3", optional = true }
+sp1-sdk = { version = "5.2.2", optional = true }
 pico-sdk = { workspace = true, optional = true }
 
 # Ethereum dependencies
@@ -25,7 +25,7 @@ clap = { version = "4.0", features = ["derive", "env"] }
 derive_more = { version = "2.0.1", features = ["full"] }
 dotenv = "0.15.0"
 hex = "0.4.3"
-methods = { path = "../guest/risc0/methods" }
+methods = { path = "../guest/risc0/methods", optional = true }
 serde = { version = "1.0", default-features = false, features = ["derive"] }
 serde_json = { version = "1.0.139", default-features = false, features = ["alloc"] }
 tracing = { workspace = true }
@@ -35,7 +35,10 @@ bincode = "1.3"
 
 [features]
 default = []
+risc0 = ["dep:risc0-zkvm", "dep:methods"]
+sp1 = ["dep:sp1-sdk", "dep:sp1-build"]
 pico = ["dep:pico-sdk"]
+zisk = []
 
 [build-dependencies]
-sp1-build = "5.2.2"
+sp1-build = { version = "5.2.2", optional = true }

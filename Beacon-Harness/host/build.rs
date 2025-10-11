@@ -1,3 +1,6 @@
 fn main() {
-    sp1_build::build_program("../guest/sp1");
+    #[cfg(feature = "sp1")]
+    {
+        sp1_build::build_program("../guest/sp1");
+    }
 }

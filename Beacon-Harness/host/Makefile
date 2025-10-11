@@ -169,15 +169,36 @@ $(addprefix run-block-, $(BLOCK_OPERATIONS)): run-block-%: $(EXTRACT_DIR)
 				--excluded-cases random_with_exits_with_duplicates \
 				block $* \
 				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_block_$*.log; \
-	else \
+	elif [ "$(ZKVM)" = "sp1" ]; then \
+		echo "Building with SP1 feature only..."; \
 		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
-			$(if $(filter risc-zero,$(ZKVM)),RISC0_DEV_MODE=$(RISC0_DEV_MODE),) \
-			cargo run --release -- \
+			cargo run --release --features sp1 -- \
 				--zkvm $(ZKVM) \
 				--excluded-cases multi_proposer_index_iterations \
 				--excluded-cases random_with_exits_with_duplicates \
 				block $* \
 				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_block_$*.log; \
+	elif [ "$(ZKVM)" = "risc-zero" ]; then \
+		echo "Building with RISC0 feature only..."; \
+		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) RISC0_DEV_MODE=$(RISC0_DEV_MODE) \
+			cargo run --release --features risc0 -- \
+				--zkvm $(ZKVM) \
+				--excluded-cases multi_proposer_index_iterations \
+				--excluded-cases random_with_exits_with_duplicates \
+				block $* \
+				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_block_$*.log; \
+	elif [ "$(ZKVM)" = "zisk" ]; then \
+		echo "Building with ZISK feature only..."; \
+		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
+			cargo run --release --features zisk -- \
+				--zkvm $(ZKVM) \
+				--excluded-cases multi_proposer_index_iterations \
+				--excluded-cases random_with_exits_with_duplicates \
+				block $* \
+				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_block_$*.log; \
+	else \
+		echo "Unknown ZKVM: $(ZKVM)"; \
+		exit 1; \
 	fi
 	@echo "Execution complete for block $* using $(ZKVM)."
 	@$(PARSE_SCRIPT) $(ZKVM)_block_$*
@@ -196,13 +217,30 @@ $(addprefix run-epoch-, $(EPOCH_OPERATIONS)): run-epoch-%: $(EXTRACT_DIR)
 				--zkvm $(ZKVM) \
 				epoch $* \
 				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_epoch_$*.log; \
-	else \
+	elif [ "$(ZKVM)" = "sp1" ]; then \
+		echo "Building with SP1 feature only..."; \
 		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
-			$(if $(filter risc-zero,$(ZKVM)),RISC0_DEV_MODE=$(RISC0_DEV_MODE),) \
-			cargo run --release -- \
+			cargo run --release --features sp1 -- \
 				--zkvm $(ZKVM) \
 				epoch $* \
 				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_epoch_$*.log; \
+	elif [ "$(ZKVM)" = "risc-zero" ]; then \
+		echo "Building with RISC0 feature only..."; \
+		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) RISC0_DEV_MODE=$(RISC0_DEV_MODE) \
+			cargo run --release --features risc0 -- \
+				--zkvm $(ZKVM) \
+				epoch $* \
+				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_epoch_$*.log; \
+	elif [ "$(ZKVM)" = "zisk" ]; then \
+		echo "Building with ZISK feature only..."; \
+		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
+			cargo run --release --features zisk -- \
+				--zkvm $(ZKVM) \
+				epoch $* \
+				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_epoch_$*.log; \
+	else \
+		echo "Unknown ZKVM: $(ZKVM)"; \
+		exit 1; \
 	fi
 	@echo "Execution complete for epoch $* using $(ZKVM)."
 	@$(PARSE_SCRIPT) $(ZKVM)_epoch_$*
