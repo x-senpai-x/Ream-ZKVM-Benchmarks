@@ -1,6 +1,6 @@
 # Beacon Harness
 
-`Beacon Harness` is a unified benchmark suite for Ethereum consensus state transition functions supporting [RISC Zero zkVM](https://github.com/risc0/risc0), [SP1](https://github.com/succinctlabs/sp1), and [ZISK](https://github.com/0xPolygonHermez/zisk). It leverages [ream](https://github.com/ReamLabs/ream) to provide comprehensive performance metrics for consensus operations.
+`Beacon Harness` is a unified benchmark suite for Ethereum consensus state transition functions supporting [RISC Zero zkVM](https://github.com/risc0/risc0), [SP1](https://github.com/succinctlabs/sp1), [ZISK](https://github.com/0xPolygonHermez/zisk), and [Pico](https://github.com/brevis-network/pico). It leverages [ream](https://github.com/ReamLabs/ream) to provide comprehensive performance metrics for consensus operations.
 
 ## Requirements
 
@@ -8,6 +8,7 @@
 - [RISC Zero](https://dev.risczero.com/api/getting-started) (for RISC Zero backend)
 - [SP1](https://docs.succinct.xyz/getting-started/install.html) (for SP1 backend)
 - [ZISK](https://github.com/0xPolygonHermez/zisk) (for ZISK backend)
+- [Pico](https://github.com/brevis-network/pico) (for Pico backend - requires Rust nightly)
 
 ## Running the Project
 
@@ -41,6 +42,11 @@ With ZISK:
 make zisk
 ```
 
+With Pico:
+```sh
+make pico
+```
+
 With default backend (RISC Zero):
 ```sh
 make all
@@ -53,6 +59,7 @@ Run all block processing benchmarks:
 make sp1-block-all    # Using SP1
 make r0-block-all     # Using RISC Zero
 make zisk-block-all   # Using ZISK
+make pico-block-all   # Using Pico
 make block-all        # Using default backend
 ```
 
@@ -61,6 +68,7 @@ Run all epoch processing benchmarks:
 make sp1-epoch-all    # Using SP1
 make r0-epoch-all     # Using RISC Zero
 make zisk-epoch-all   # Using ZISK
+make pico-epoch-all   # Using Pico
 make epoch-all        # Using default backend
 ```
 
@@ -72,6 +80,7 @@ make run-block-<OPERATION_NAME>                 # Using default backend
 make run-block-<OPERATION_NAME> ZKVM=sp1        # Using SP1
 make run-block-<OPERATION_NAME> ZKVM=risc-zero  # Using RISC Zero
 make run-block-<OPERATION_NAME> ZKVM=zisk       # Using ZISK
+make run-block-<OPERATION_NAME> ZKVM=pico       # Using Pico
 ```
 
 Available block operations:
@@ -92,6 +101,7 @@ make run-epoch-<OPERATION_NAME>                 # Using default backend
 make run-epoch-<OPERATION_NAME> ZKVM=sp1        # Using SP1
 make run-epoch-<OPERATION_NAME> ZKVM=risc-zero  # Using RISC Zero
 make run-epoch-<OPERATION_NAME> ZKVM=zisk       # Using ZISK
+make run-epoch-<OPERATION_NAME> ZKVM=pico       # Using Pico
 ```
 
 Available epoch operations:
@@ -115,14 +125,14 @@ Available epoch operations:
 # Run attestation benchmark with SP1
 make run-block-attestation ZKVM=sp1
 
-# Run attestation benchmark with ZISK
-make run-block-attestation ZKVM=zisk
+# Run attestation benchmark with Pico
+make run-block-attestation ZKVM=pico
 
 # Run all block benchmarks with RISC Zero
 make r0-block-all
 
-# Run all block benchmarks with ZISK
-make zisk-block-all
+# Run all block benchmarks with Pico
+make pico-block-all
 
 # Run justification benchmark with default backend
 make run-epoch-justification_and_finalization
@@ -130,8 +140,8 @@ make run-epoch-justification_and_finalization
 # Run all benchmarks with SP1
 make sp1
 
-# Run all benchmarks with ZISK
-make zisk
+# Run all benchmarks with Pico
+make pico
 ```
 
 ### Other Commands
@@ -161,7 +171,35 @@ make help
 - **Logs**: Execution logs are saved in `./host/logs/`
 - **Summaries**: Benchmark summaries (including cycle counts) are generated in `./host/summaries/`
 
+## Pico Setup
+
+Pico requires Rust nightly and has an additional build step for the guest code.
+
+### First-time Setup
+
+1. Install Rust nightly:
+```sh
+rustup install nightly
+```
+
+2. Build the Pico guest:
+```sh
+cd guest/app
+cargo +nightly pico build
+```
+
+### Running Pico Benchmarks
+
+After building the guest, use the Makefile as normal - it automatically handles nightly toolchain:
+
+```sh
+make run-block-attestation ZKVM=pico
+make pico-block-all
+make pico
+```
+
 ## Notes
 
 - The `all` target excludes `execution_payload` (not implemented) and `withdrawals` (incompatible with BeaconState workaround) from block operations
 - Zisk only has total execution time available for benchmarks, work is ongoing to capture detailed cycle counts
+- Pico is an optional feature and requires Rust nightly. Other zkVMs work with stable Rust.

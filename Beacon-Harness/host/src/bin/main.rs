@@ -3,6 +3,8 @@ use ream_consensus::electra::beacon_state::BeaconState;
 use ream_lib::{file::ssz_from_file, input::OperationInput, ssz::from_ssz_bytes};
 use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts};
 use sp1_sdk::{ProverClient, SP1Stdin, include_elf};
+#[cfg(feature = "pico")]
+use pico_sdk::client::DefaultProverClient;
 use serde::{Serialize, Deserialize};
 
 use std::fs;
@@ -35,6 +37,8 @@ pub enum ZkVm {
     Sp1,
     RiscZero,
     Zisk,
+    #[cfg(feature = "pico")]
+    Pico,
 }
 
 /// The arguments for the command.
@@ -128,6 +132,10 @@ fn run_tests<T: OperationHandler>(
             }
             ZkVm::Zisk => {
                 run_zisk_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir);
+            }
+            #[cfg(feature = "pico")]
+            ZkVm::Pico => {
+                run_pico_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir);
             }
         }
 
@@ -431,6 +439,66 @@ fn write_zisk_input(
     let serialized_input = bincode::serialize(&zisk_input)?;
     std::fs::write(input_path, serialized_input)?;
     Ok(())
+}
+
+#[cfg(feature = "pico")]
+fn run_pico_test<T: OperationHandler>(
+    pre_state_ssz_bytes: &[u8],
+    input: &OperationInput,
+    test_case: &str,
+    operation: &T,
+    compare_specs: bool,
+    compare_recompute: bool,
+    case_dir: &PathBuf,
+) {
+    // Load the Pico ELF
+    let elf_path = "../guest/app/elf/riscv32im-pico-zkvm-elf";
+    let elf = std::fs::read(elf_path)
+        .expect(&format!("Failed to load Pico ELF from {}", elf_path));
+    info!("Loaded Pico ELF, size: {} bytes", elf.len());
+
+    // Setup the executor environment and inject inputs
+    let client = DefaultProverClient::new(&elf);
+    let mut stdin_builder = client.new_stdin_builder();
+
+    // Write pre-state length and bytes
+    stdin_builder.write(&pre_state_ssz_bytes.len());
+    stdin_builder.write_slice(&pre_state_ssz_bytes);
+
+    // Write operation input
+    stdin_builder.write(&input);
+
+    //
+    // Prover setup & proving
+    //
+    info!("----- Cycle Tracker Start -----");
+    let start_time = Instant::now();
+    let (cycles, raw_output) = client.emulate(stdin_builder);
+    let duration = start_time.elapsed();
+
+    info!("Execution time: {:?}", duration);
+    info!("Execution cycles: {}", cycles);
+
+    // Parse output - Pico returns 8 bytes prefix followed by 32 bytes state root
+    let (_prefix_bytes, root_bytes) = raw_output.split_at(8);
+    let state_root = Hash256::from_slice(root_bytes);
+
+    info!("Output size: {} bytes", state_root.len());
+    info!("Output: {:#?}", state_root);
+
+    //
+    // Compare proofs against references (consensus-spec-tests or recompute on host)
+    //
+
+    if compare_specs {
+        info!("Comparing the root against consensus-spec-tests post_state");
+        assert_state_root_matches_specs(&state_root, &pre_state_ssz_bytes, &case_dir);
+    }
+
+    if compare_recompute {
+        info!("Comparing the root by recomputing on host");
+        assert_state_root_matches_recompute(&state_root, &pre_state_ssz_bytes, &input);
+    }
 }
 
 fn parse_state_root_from_hex(output: &str) -> Hash256 {

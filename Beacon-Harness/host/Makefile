@@ -10,19 +10,19 @@ SORT_SCRIPT = ./subscripts/sort_table.sh
 BLOCK_OPERATIONS = attestation attester_slashing block_header bls_to_execution_change deposit execution_payload proposer_slashing sync_aggregate voluntary_exit withdrawals
 EPOCH_OPERATIONS = justification_and_finalization inactivity_updates rewards_and_penalties registry_updates slashings eth1_data_reset pending_deposits pending_consolidations effective_balance_updates slashings_reset randao_mixes_reset historical_summaries_update participation_flag_updates
 
-# zkVM backend: sp1, risc-zero, or zisk (default: risc-zero)
+# zkVM backend: sp1, risc-zero, zisk, or pico (default: risc-zero)
 ZKVM ?= risc-zero
 RISC0_DEV_MODE = 1
 RUST_BACKTRACE = full
 
-.PHONY: all help build test download run clean sp1 r0 risc-zero risc-zero-block-all risc-zero-epoch-all zisk zisk-block-all zisk-epoch-all $(addprefix run-block-, $(BLOCK_OPERATIONS)) $(addprefix run-epoch-, $(EPOCH_OPERATIONS)) block-all epoch-all sp1-block-all sp1-epoch-all r0-block-all r0-epoch-all
+.PHONY: all help build test download run clean sp1 r0 risc-zero risc-zero-block-all risc-zero-epoch-all zisk zisk-block-all zisk-epoch-all pico pico-block-all pico-epoch-all $(addprefix run-block-, $(BLOCK_OPERATIONS)) $(addprefix run-epoch-, $(EPOCH_OPERATIONS)) block-all epoch-all sp1-block-all sp1-epoch-all r0-block-all r0-epoch-all
 
 # Default target shows help
 help:
 	@echo "Beacon Harness Makefile"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make <target> [ZKVM=sp1|risc-zero|zisk]"
+	@echo "  make <target> [ZKVM=sp1|risc-zero|zisk|pico]"
 	@echo ""
 	@echo "Targets:"
 	@echo "  help              Show this help message"
@@ -46,6 +46,9 @@ help:
 	@echo "  zisk              Run all ZISK benchmarks"
 	@echo "  zisk-block-all    Run all block benchmarks with ZISK"
 	@echo "  zisk-epoch-all    Run all epoch benchmarks with ZISK"
+	@echo "  pico              Run all Pico benchmarks"
+	@echo "  pico-block-all    Run all block benchmarks with Pico"
+	@echo "  pico-epoch-all    Run all epoch benchmarks with Pico"
 	@echo ""
 	@echo "Individual operations:"
 	@echo "  Block operations: $(BLOCK_OPERATIONS)"
@@ -55,9 +58,11 @@ help:
 	@echo "  make run-block-attestation              # Run attestation with default zkVM"
 	@echo "  make run-block-attestation ZKVM=sp1     # Run attestation with SP1"
 	@echo "  make run-block-attestation ZKVM=zisk    # Run attestation with ZISK"
+	@echo "  make run-block-attestation ZKVM=pico    # Run attestation with Pico"
 	@echo "  make sp1-block-all                      # Run all block benchmarks with SP1"
 	@echo "  make r0-epoch-all                       # Run all epoch benchmarks with RISC Zero"
 	@echo "  make zisk-block-all                     # Run all block benchmarks with ZISK"
+	@echo "  make pico-block-all                     # Run all block benchmarks with Pico"
 	@echo ""
 
 # run-block-execution_payload (not implemented) and run-block-withdrawals (incompatible with BeaconState workaround) are excluded
@@ -126,6 +131,18 @@ zisk-block-all:
 zisk-epoch-all:
 	@$(MAKE) epoch-all ZKVM=zisk
 
+# Run all benchmarks with Pico
+pico:
+	@$(MAKE) all ZKVM=pico
+
+# Run all block processing benchmarks with Pico
+pico-block-all:
+	@$(MAKE) block-all ZKVM=pico
+
+# Run all epoch processing benchmarks with Pico
+pico-epoch-all:
+	@$(MAKE) epoch-all ZKVM=pico
+
 download:
 	@echo "Running download script..."
 	@chmod +x $(DOWNLOAD_SCRIPT)
@@ -143,14 +160,25 @@ $(addprefix run-block-, $(BLOCK_OPERATIONS)): run-block-%: $(EXTRACT_DIR)
 	@echo "##################################################"
 	@echo "Running block benchmarks for $* using $(ZKVM)..."
 	@echo "##################################################"
-	@NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
-		$(if $(filter risc-zero,$(ZKVM)),RISC0_DEV_MODE=$(RISC0_DEV_MODE),) \
-		cargo run --release -- \
-			--zkvm $(ZKVM) \
-			--excluded-cases multi_proposer_index_iterations \
-			--excluded-cases random_with_exits_with_duplicates \
-			block $* \
-			2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_block_$*.log
+	@if [ "$(ZKVM)" = "pico" ]; then \
+		echo "Using Rust nightly toolchain for Pico..."; \
+		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
+			cargo +nightly run --release --features pico -- \
+				--zkvm $(ZKVM) \
+				--excluded-cases multi_proposer_index_iterations \
+				--excluded-cases random_with_exits_with_duplicates \
+				block $* \
+				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_block_$*.log; \
+	else \
+		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
+			$(if $(filter risc-zero,$(ZKVM)),RISC0_DEV_MODE=$(RISC0_DEV_MODE),) \
+			cargo run --release -- \
+				--zkvm $(ZKVM) \
+				--excluded-cases multi_proposer_index_iterations \
+				--excluded-cases random_with_exits_with_duplicates \
+				block $* \
+				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_block_$*.log; \
+	fi
 	@echo "Execution complete for block $* using $(ZKVM)."
 	@$(PARSE_SCRIPT) $(ZKVM)_block_$*
 	@$(SORT_SCRIPT) $(SUMMARIES_DIR)/summary_$(ZKVM)_block_$*.md
@@ -161,12 +189,21 @@ $(addprefix run-epoch-, $(EPOCH_OPERATIONS)): run-epoch-%: $(EXTRACT_DIR)
 	@echo "##################################################"
 	@echo "Running epoch processing benchmarks for $* using $(ZKVM)..."
 	@echo "##################################################"
-	@NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
-		$(if $(filter risc-zero,$(ZKVM)),RISC0_DEV_MODE=$(RISC0_DEV_MODE),) \
-		cargo run --release -- \
-			--zkvm $(ZKVM) \
-			epoch $* \
-			2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_epoch_$*.log
+	@if [ "$(ZKVM)" = "pico" ]; then \
+		echo "Using Rust nightly toolchain for Pico..."; \
+		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
+			cargo +nightly run --release --features pico -- \
+				--zkvm $(ZKVM) \
+				epoch $* \
+				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_epoch_$*.log; \
+	else \
+		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
+			$(if $(filter risc-zero,$(ZKVM)),RISC0_DEV_MODE=$(RISC0_DEV_MODE),) \
+			cargo run --release -- \
+				--zkvm $(ZKVM) \
+				epoch $* \
+				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_epoch_$*.log; \
+	fi
 	@echo "Execution complete for epoch $* using $(ZKVM)."
 	@$(PARSE_SCRIPT) $(ZKVM)_epoch_$*
 	@$(SORT_SCRIPT) $(SUMMARIES_DIR)/summary_$(ZKVM)_epoch_$*.md

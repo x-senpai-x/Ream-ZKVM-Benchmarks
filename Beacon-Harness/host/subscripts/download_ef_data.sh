@@ -37,5 +37,3 @@ download_and_extract() {
 }
 
 download_and_extract
-!/bin/bash
-!/bin/bash
