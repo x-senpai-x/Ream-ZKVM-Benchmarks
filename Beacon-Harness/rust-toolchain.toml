@@ -1,0 +1,7 @@
+[toolchain]
+# Use stable as default for most development
+# Note: Individual zkVMs may override with specific nightly versions via Makefile:
+# - Pico requires nightly (specified via +nightly in Makefile)
+# - OpenVM requires nightly v1.4.0 compatible toolchain (specified via +nightly in Makefile)
+channel = "stable"
+components = ["rustfmt", "clippy"]

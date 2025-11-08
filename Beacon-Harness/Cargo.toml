@@ -9,18 +9,23 @@ members = [
     "guest/zisk",
     "guest/app",
 ]
+exclude = ["guest/openvm"]
+# Note: guest/openvm is excluded from workspace to avoid alloy version conflicts
+# It's built separately by the OpenVM SDK with its own dependency resolution
 
 [workspace.dependencies]
 bincode = "1.3"
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing" }
 ethereum_ssz = "0.9"
 pico-sdk = { git = "https://github.com/brevis-network/pico", tag = "v1.1.6" }
-ream-consensus = { git = "https://github.com/ReamLabs/ream.git", package = "ream-consensus-beacon", features = ["zkvm"] }
+ream-consensus = { git = "https://github.com/syjn99/ream", package = "ream-consensus", rev = "50d148b9b0f6f6064dbe3803515f1e10ead93d42", features = ["zkvm"] }
 sha2 = "0.10.8"
 ssz_types = { git = "https://github.com/ReamLabs/ssz_types", branch = "magic-extended-list" }
 tracing = "0.1"
 tree_hash = "0.10"
 tree_hash_derive = "0.10"
+openvm-sdk = { git = "https://github.com/openvm-org/openvm.git", tag = "v1.4.0", default-features = false }
+openvm-build = { git = "https://github.com/openvm-org/openvm.git", tag = "v1.4.0", default-features = false }
 
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing" }

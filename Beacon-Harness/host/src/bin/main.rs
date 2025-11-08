@@ -11,13 +11,19 @@ use sp1_sdk::{ProverClient, SP1Stdin, include_elf};
 #[cfg(feature = "pico")]
 use pico_sdk::client::DefaultProverClient;
 
+#[cfg(feature = "openvm")]
+use openvm_sdk::{StdIn, Sdk};
+
+#[cfg(feature = "openvm")]
+use openvm_build::GuestOptions;
+
 use serde::{Serialize, Deserialize};
 
 use std::fs;
 use std::path::PathBuf;
 #[cfg(feature = "zisk")]
 use std::process::Command;
-#[cfg(any(feature = "sp1", feature = "risc0", feature = "pico"))]
+#[cfg(any(feature = "sp1", feature = "risc0", feature = "pico", feature = "openvm"))]
 use std::time::Instant;
 use tracing::info;
 use tree_hash::{Hash256, TreeHash};
@@ -54,6 +60,8 @@ pub enum ZkVm {
     Zisk,
     #[cfg(feature = "pico")]
     Pico,
+    #[cfg(feature = "openvm")]
+    Openvm,
 }
 
 /// The arguments for the command.
@@ -154,6 +162,10 @@ fn run_tests<T: OperationHandler>(
             #[cfg(feature = "pico")]
             ZkVm::Pico => {
                 run_pico_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir);
+            }
+            #[cfg(feature = "openvm")]
+            ZkVm::Openvm => {
+                run_openvm_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir);
             }
         }
 
@@ -506,6 +518,81 @@ fn run_pico_test<T: OperationHandler>(
     let state_root = Hash256::from_slice(root_bytes);
 
     info!("Output size: {} bytes", state_root.len());
+    info!("Output: {:#?}", state_root);
+
+    //
+    // Compare proofs against references (consensus-spec-tests or recompute on host)
+    //
+
+    if compare_specs {
+        info!("Comparing the root against consensus-spec-tests post_state");
+        assert_state_root_matches_specs(&state_root, &pre_state_ssz_bytes, &case_dir);
+    }
+
+    if compare_recompute {
+        info!("Comparing the root by recomputing on host");
+        assert_state_root_matches_recompute(&state_root, &pre_state_ssz_bytes, &input);
+    }
+}
+
+#[cfg(feature = "openvm")]
+fn run_openvm_test<T: OperationHandler>(
+    pre_state_ssz_bytes: &[u8],
+    input: &OperationInput,
+    test_case: &str,
+    operation: &T,
+    compare_specs: bool,
+    compare_recompute: bool,
+    case_dir: &PathBuf,
+) {
+    // Build the ELF file
+    let sdk = Sdk::standard();
+    let guest_opts = GuestOptions::default();
+    let target_path = "../guest/openvm";
+
+    info!("----- Cycle Tracker Start -----");
+    let start_time = Instant::now();
+    let elf = sdk.build(
+        guest_opts,
+        target_path,
+        &None,
+        None,
+    ).expect("Failed to build OpenVM guest");
+    let build_time = start_time.elapsed();
+    info!("OpenVM guest built in {:?}", build_time);
+
+    // Deserialize pre_state for OpenVM (which expects the full BeaconState object)
+    let pre_state: BeaconState = from_ssz_bytes(&pre_state_ssz_bytes)
+        .expect("Failed to deserialize pre-state");
+
+    // Prepare input
+    let mut stdin = StdIn::default();
+    stdin.write(&input);
+    stdin.write(&pre_state);
+
+    // Execute the program
+    let start_time = Instant::now();
+    let output = sdk.execute(elf.clone(), stdin.clone())
+        .expect("Failed to execute OpenVM program");
+    let execution_time = start_time.elapsed();
+    info!("Program executed successfully.");
+
+    // Record execution stats
+    info!("----- Cycle Tracker -----");
+    info!("[{}] Test case: {}", operation, test_case);
+    info!("execution-time-host-call: {}", execution_time.as_secs_f64());
+
+    // Parse output - OpenVM reveals 32 bytes state root directly
+    if output.len() != 32 {
+        panic!("Unexpected output length: expected 32 bytes, got {}", output.len());
+    }
+
+    let state_root_bytes: [u8; 32] = output
+        .as_slice()
+        .try_into()
+        .expect("Failed to convert output to [u8; 32]");
+    let state_root = Hash256::from_slice(&state_root_bytes);
+
     info!("Output: {:#?}", state_root);
 
     //

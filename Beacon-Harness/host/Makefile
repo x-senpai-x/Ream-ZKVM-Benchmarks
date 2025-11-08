@@ -10,19 +10,19 @@ SORT_SCRIPT = ./subscripts/sort_table.sh
 BLOCK_OPERATIONS = attestation attester_slashing block_header bls_to_execution_change deposit execution_payload proposer_slashing sync_aggregate voluntary_exit withdrawals
 EPOCH_OPERATIONS = justification_and_finalization inactivity_updates rewards_and_penalties registry_updates slashings eth1_data_reset pending_deposits pending_consolidations effective_balance_updates slashings_reset randao_mixes_reset historical_summaries_update participation_flag_updates
 
-# zkVM backend: sp1, risc-zero, zisk, or pico (default: risc-zero)
+# zkVM backend: sp1, risc-zero, zisk, pico, or openvm (default: risc-zero)
 ZKVM ?= risc-zero
 RISC0_DEV_MODE = 1
 RUST_BACKTRACE = full
 
-.PHONY: all help build test download run clean sp1 r0 risc-zero risc-zero-block-all risc-zero-epoch-all zisk zisk-block-all zisk-epoch-all pico pico-block-all pico-epoch-all $(addprefix run-block-, $(BLOCK_OPERATIONS)) $(addprefix run-epoch-, $(EPOCH_OPERATIONS)) block-all epoch-all sp1-block-all sp1-epoch-all r0-block-all r0-epoch-all
+.PHONY: all help build test download run clean sp1 r0 risc-zero risc-zero-block-all risc-zero-epoch-all zisk zisk-block-all zisk-epoch-all pico pico-block-all pico-epoch-all openvm openvm-block-all openvm-epoch-all $(addprefix run-block-, $(BLOCK_OPERATIONS)) $(addprefix run-epoch-, $(EPOCH_OPERATIONS)) block-all epoch-all sp1-block-all sp1-epoch-all r0-block-all r0-epoch-all
 
 # Default target shows help
 help:
 	@echo "Beacon Harness Makefile"
 	@echo ""
 	@echo "Usage:"
-	@echo "  make <target> [ZKVM=sp1|risc-zero|zisk|pico]"
+	@echo "  make <target> [ZKVM=sp1|risc-zero|zisk|pico|openvm]"
 	@echo ""
 	@echo "Targets:"
 	@echo "  help              Show this help message"
@@ -49,6 +49,9 @@ help:
 	@echo "  pico              Run all Pico benchmarks"
 	@echo "  pico-block-all    Run all block benchmarks with Pico"
 	@echo "  pico-epoch-all    Run all epoch benchmarks with Pico"
+	@echo "  openvm            Run all OpenVM benchmarks"
+	@echo "  openvm-block-all  Run all block benchmarks with OpenVM"
+	@echo "  openvm-epoch-all  Run all epoch benchmarks with OpenVM"
 	@echo ""
 	@echo "Individual operations:"
 	@echo "  Block operations: $(BLOCK_OPERATIONS)"
@@ -59,10 +62,12 @@ help:
 	@echo "  make run-block-attestation ZKVM=sp1     # Run attestation with SP1"
 	@echo "  make run-block-attestation ZKVM=zisk    # Run attestation with ZISK"
 	@echo "  make run-block-attestation ZKVM=pico    # Run attestation with Pico"
+	@echo "  make run-block-attestation ZKVM=openvm # Run attestation with OpenVM"
 	@echo "  make sp1-block-all                      # Run all block benchmarks with SP1"
 	@echo "  make r0-epoch-all                       # Run all epoch benchmarks with RISC Zero"
 	@echo "  make zisk-block-all                     # Run all block benchmarks with ZISK"
 	@echo "  make pico-block-all                     # Run all block benchmarks with Pico"
+	@echo "  make openvm-block-all                   # Run all block benchmarks with OpenVM"
 	@echo ""
 
 # run-block-execution_payload (not implemented) and run-block-withdrawals (incompatible with BeaconState workaround) are excluded
@@ -143,6 +148,18 @@ pico-block-all:
 pico-epoch-all:
 	@$(MAKE) epoch-all ZKVM=pico
 
+# Run all benchmarks with OpenVM
+openvm:
+	@$(MAKE) all ZKVM=openvm
+
+# Run all block processing benchmarks with OpenVM
+openvm-block-all:
+	@$(MAKE) block-all ZKVM=openvm
+
+# Run all epoch processing benchmarks with OpenVM
+openvm-epoch-all:
+	@$(MAKE) epoch-all ZKVM=openvm
+
 download:
 	@echo "Running download script..."
 	@chmod +x $(DOWNLOAD_SCRIPT)
@@ -196,6 +213,15 @@ $(addprefix run-block-, $(BLOCK_OPERATIONS)): run-block-%: $(EXTRACT_DIR)
 				--excluded-cases random_with_exits_with_duplicates \
 				block $* \
 				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_block_$*.log; \
+	elif [ "$(ZKVM)" = "openvm" ]; then \
+		echo "Building with OpenVM feature only (using nightly toolchain)..."; \
+		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
+			cargo +nightly run --release --features openvm -- \
+				--zkvm $(ZKVM) \
+				--excluded-cases multi_proposer_index_iterations \
+				--excluded-cases random_with_exits_with_duplicates \
+				block $* \
+				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_block_$*.log; \
 	else \
 		echo "Unknown ZKVM: $(ZKVM)"; \
 		exit 1; \
@@ -235,6 +261,13 @@ $(addprefix run-epoch-, $(EPOCH_OPERATIONS)): run-epoch-%: $(EXTRACT_DIR)
 		echo "Building with ZISK feature only..."; \
 		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
 			cargo run --release --features zisk -- \
+				--zkvm $(ZKVM) \
+				epoch $* \
+				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_epoch_$*.log; \
+	elif [ "$(ZKVM)" = "openvm" ]; then \
+		echo "Building with OpenVM feature only (using nightly toolchain)..."; \
+		NO_COLOR=1 RUST_BACKTRACE=$(RUST_BACKTRACE) \
+			cargo +nightly run --release --features openvm -- \
 				--zkvm $(ZKVM) \
 				epoch $* \
 				2>&1 | tee $(LOGS_DIR)/execution_$(ZKVM)_epoch_$*.log; \
