@@ -1,6 +1,2 @@
 [build]
-# Use nightly toolchain for full workspace builds to support Pico which requires nightly features
 rustflags = []
-
-[toolchain]
-channel = "nightly"
