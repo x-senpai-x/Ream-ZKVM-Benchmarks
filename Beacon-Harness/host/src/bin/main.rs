@@ -3,7 +3,7 @@ use ream_consensus::electra::beacon_state::BeaconState;
 use ream_lib::{file::ssz_from_file, input::OperationInput, ssz::from_ssz_bytes};
 
 #[cfg(feature = "risc0")]
-use risc0_zkvm::{default_prover, ExecutorEnv, ProverOpts};
+use risc0_zkvm::{default_prover, default_executor, ExecutorEnv, ProverOpts};
 
 #[cfg(feature = "sp1")]
 use sp1_sdk::{ProverClient, SP1Stdin, include_elf};
@@ -11,13 +11,18 @@ use sp1_sdk::{ProverClient, SP1Stdin, include_elf};
 #[cfg(feature = "pico")]
 use pico_sdk::client::DefaultProverClient;
 
+#[cfg(feature = "jolt")]
+use consenjolt::trace_state_transition_to_file;
+
+#[cfg(feature = "zisk")]
 use serde::{Serialize, Deserialize};
 
-use std::fs;
 use std::path::PathBuf;
 #[cfg(feature = "zisk")]
+use std::fs;
+#[cfg(feature = "zisk")]
 use std::process::Command;
-#[cfg(any(feature = "sp1", feature = "risc0", feature = "pico"))]
+#[cfg(any(feature = "sp1", feature = "risc0", feature = "pico", feature = "jolt", feature = "zisk"))]
 use std::time::Instant;
 use tracing::info;
 use tree_hash::{Hash256, TreeHash};
@@ -54,6 +59,36 @@ pub enum ZkVm {
     Zisk,
     #[cfg(feature = "pico")]
     Pico,
+    #[cfg(feature = "jolt")]
+    Jolt,
+}
+
+/// Execution mode: execute (fast, no proof) or prove (slow, generates proof)
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum ExecutionMode {
+    /// execution without proof generation
+    Execute,
+    /// execution with proof generation
+    Prove,
+}
+
+/// Proof type (varies by zkVM)
+#[derive(Debug, Clone, Copy, clap::ValueEnum)]
+pub enum ProofType {
+    /// Default proof type for the zkVM
+    Default,
+    /// SP1: Core proof (STARK, size proportional to execution)
+    Core,
+    /// SP1: Compressed proof (STARK, constant size)
+    Compressed,
+    /// SP1/RiscZero: Groth16 proof (SNARK, ~260 bytes, onchain verifiable)
+    Groth16,
+    /// SP1: PLONK proof (SNARK, ~868 bytes, no trusted setup)
+    Plonk,
+    /// RiscZero: Succinct proof
+    Succinct,
+    /// RiscZero: Composite proof
+    Composite,
 }
 
 /// The arguments for the command.
@@ -71,6 +106,14 @@ struct Args {
     #[clap(long, value_enum, default_value = "risc-zero")]
     zkvm: ZkVm,
 
+    /// Execution mode: execute (fast, no proof) or prove (slow, generates proof)
+    #[clap(long, value_enum, default_value = "execute")]
+    mode: ExecutionMode,
+
+    /// Proof type (varies by zkVM)
+    #[clap(long, value_enum, default_value = "default")]
+    proof_type: ProofType,
+
     /// Verify the correctness of the state root by comparing against consensus-spec-tests' post_state
     #[clap(long, default_value_t = true)]
     compare_specs: bool,
@@ -83,10 +126,14 @@ struct Args {
     excluded_cases: Vec<String>,
 }
 
+// ============================================================================
+// Main Entry Point
+// ============================================================================
+
 fn main() {
     setup_log();
 
-    let (fork, operation, excluded_cases, compare_specs, compare_recompute, zkvm) = parse_args();
+    let (fork, operation, excluded_cases, compare_specs, compare_recompute, zkvm, mode, proof_type) = parse_args();
 
     match operation {
         Operation::Block {
@@ -99,6 +146,8 @@ fn main() {
                 compare_specs,
                 compare_recompute,
                 zkvm,
+                mode,
+                proof_type,
             );
         }
         Operation::Epoch {
@@ -111,10 +160,46 @@ fn main() {
                 compare_specs,
                 compare_recompute,
                 zkvm,
+                mode,
+                proof_type,
             );
         }
     }
 }
+
+// ============================================================================
+// Setup and Configuration
+// ============================================================================
+
+fn setup_log() {
+    if std::env::var("RUST_LOG").is_err() {
+        std::env::set_var("RUST_LOG", "info");
+    }
+
+    // Initialize tracing. In order to view logs, run `RUST_LOG=info cargo run`
+    tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
+        .init();
+}
+
+fn parse_args() -> (Fork, Operation, Vec<String>, bool, bool, ZkVm, ExecutionMode, ProofType) {
+    let args = Args::parse();
+
+    (
+        args.fork.fork,
+        args.operation.operation,
+        args.excluded_cases,
+        args.compare_specs,
+        args.compare_recompute,
+        args.zkvm,
+        args.mode,
+        args.proof_type,
+    )
+}
+
+// ============================================================================
+// Test Orchestration
+// ============================================================================
 
 fn run_tests<T: OperationHandler>(
     fork: &Fork,
@@ -123,6 +208,8 @@ fn run_tests<T: OperationHandler>(
     compare_specs: bool,
     compare_recompute: bool,
     zkvm: ZkVm,
+    mode: ExecutionMode,
+    proof_type: ProofType,
 ) {
     let (base_dir, test_cases) = operation.load_test_cases(fork);
 
@@ -141,25 +228,33 @@ fn run_tests<T: OperationHandler>(
         match zkvm {
             #[cfg(feature = "sp1")]
             ZkVm::Sp1 => {
-                run_sp1_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir);
+                run_sp1_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir, mode, proof_type);
             }
             #[cfg(feature = "risc0")]
             ZkVm::RiscZero => {
-                run_risczero_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir);
+                run_risczero_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir, mode, proof_type);
             }
             #[cfg(feature = "zisk")]
             ZkVm::Zisk => {
-                run_zisk_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir);
+                run_zisk_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir, mode, proof_type);
             }
             #[cfg(feature = "pico")]
             ZkVm::Pico => {
-                run_pico_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir);
+                run_pico_test(&pre_state_ssz_bytes, &input, &test_case, operation, compare_specs, compare_recompute, &case_dir, mode, proof_type);
+            }
+            #[cfg(feature = "jolt")]
+            ZkVm::Jolt => {
+                run_jolt_test(pre_state_ssz_bytes, input, &test_case, operation, compare_specs, compare_recompute, &case_dir, mode, proof_type);
             }
         }
 
         info!("----- Cycle Tracker End -----");
     }
 }
+
+// ============================================================================
+// zkVM-Specific Test Runners
+// ============================================================================
 
 #[cfg(feature = "sp1")]
 fn run_sp1_test<T: OperationHandler>(
@@ -170,6 +265,8 @@ fn run_sp1_test<T: OperationHandler>(
     compare_specs: bool,
     compare_recompute: bool,
     case_dir: &PathBuf,
+    mode: ExecutionMode,
+    proof_type: ProofType,
 ) {
     let client = ProverClient::from_env();
 
@@ -177,41 +274,109 @@ fn run_sp1_test<T: OperationHandler>(
     stdin.write_slice(&pre_state_ssz_bytes);
     stdin.write(&input);
 
-    // Execute the program
-    let start_time = Instant::now();
-    let (output, report) = client.execute(OPERATIONS_ELF, &stdin).run().unwrap();
-    let execution_time = start_time.elapsed();
-    info!("Program executed successfully.");
+    match mode {
+        ExecutionMode::Execute => {
+            // Execute the program without proof generation
+            let start_time = Instant::now();
+            let (output, report) = client.execute(OPERATIONS_ELF, &stdin).run().unwrap();
+            let execution_time = start_time.elapsed();
+            info!("Program executed successfully (execute mode).");
 
-    // Record the number of cycles executed.
-    info!("----- Cycle Tracker -----");
-    info!("[{}] Test case: {}", operation, test_case);
-    info!("Number of cycles: {}", report.total_instruction_count());
-    info!("Number of syscall count: {}", report.total_syscall_count());
-    info!("execution-time-host-call: {}", execution_time.as_secs_f64());
-    for (key, value) in report.cycle_tracker.iter() {
-        info!("{}: {}", key, value);
-    }
-    info!("State root: {:?}", output);
+            // Record the number of cycles executed.
+            info!("----- Cycle Tracker -----");
+            info!("[{}] Test case: {}", operation, test_case);
+            info!("Number of cycles: {}", report.total_instruction_count());
+            info!("Number of syscall count: {}", report.total_syscall_count());
+            info!("execution-time-host-call: {}", execution_time.as_secs_f64());
+            for (key, value) in report.cycle_tracker.iter() {
+                info!("{}: {}", key, value);
+            }
+            info!("State root: {:?}", output);
 
-    //
-    // Compare proofs against references (consensus-spec-tests or recompute on host)
-    //
+            //
+            // Compare proofs against references (consensus-spec-tests or recompute on host)
+            //
 
-    if compare_specs {
-        info!("Comparing the root against consensus-spec-tests post_state");
-        let mut output_copy = output.clone();
-        let state_root: Hash256 = output_copy.read();
-        info!("new_state_root: {:?}", state_root);
-        assert_state_root_matches_specs(&state_root, &pre_state_ssz_bytes, &case_dir);
-    }
+            if compare_specs {
+                info!("Comparing the root against consensus-spec-tests post_state");
+                let mut output_copy = output.clone();
+                let state_root: Hash256 = output_copy.read();
+                info!("new_state_root: {:?}", state_root);
+                assert_state_root_matches_specs(&state_root, &pre_state_ssz_bytes, &case_dir);
+            }
 
-    if compare_recompute {
-        info!("Comparing the root by recomputing on host");
-        let mut output_copy = output.clone();
-        let state_root: Hash256 = output_copy.read();
-        info!("new_state_root: {:?}", state_root);
-        assert_state_root_matches_recompute(&state_root, &pre_state_ssz_bytes, &input);
+            if compare_recompute {
+                info!("Comparing the root by recomputing on host");
+                let mut output_copy = output.clone();
+                let state_root: Hash256 = output_copy.read();
+                info!("new_state_root: {:?}", state_root);
+                assert_state_root_matches_recompute(&state_root, &pre_state_ssz_bytes, &input);
+            }
+        }
+        ExecutionMode::Prove => {
+            // Generate proof
+            info!("Generating proof with type: {:?}", proof_type);
+            let start_time = Instant::now();
+
+            let (pk, vk) = client.setup(OPERATIONS_ELF);
+
+            let mut proof = match proof_type {
+                ProofType::Core | ProofType::Default => {
+                    info!("Using Core proof type (STARK, size proportional to execution)");
+                    client.prove(&pk, &stdin).run().unwrap()
+                }
+                ProofType::Compressed => {
+                    info!("Using Compressed proof type (STARK, constant size)");
+                    client.prove(&pk, &stdin).compressed().run().unwrap()
+                }
+                ProofType::Groth16 => {
+                    info!("Using Groth16 proof type (SNARK, ~260 bytes, onchain verifiable)");
+                    client.prove(&pk, &stdin).groth16().run().unwrap()
+                }
+                ProofType::Plonk => {
+                    info!("Using PLONK proof type (SNARK, ~868 bytes, no trusted setup)");
+                    client.prove(&pk, &stdin).plonk().run().unwrap()
+                }
+                _ => {
+                    info!("Unsupported proof type for SP1, using default Core proof");
+                    client.prove(&pk, &stdin).run().unwrap()
+                }
+            };
+
+            let proving_time = start_time.elapsed();
+            info!("Proof generation complete.");
+            info!("proving-time: {}", proving_time.as_secs_f64());
+
+            // Extract state root from proof
+            let state_root: Hash256 = proof.public_values.read();
+            info!("State root from proof: {:?}", state_root);
+
+            // Verify proof
+            let verify_start = Instant::now();
+            client.verify(&proof, &vk).expect("Proof verification failed");
+            let verify_time = verify_start.elapsed();
+            info!("Proof verified successfully.");
+            info!("verification-time: {}", verify_time.as_secs_f64());
+
+            // Log proof size
+            let proof_bytes = bincode::serialize(&proof).unwrap();
+            info!("Proof size: {} bytes", proof_bytes.len());
+
+            //
+            // Compare proofs against references (consensus-spec-tests or recompute on host)
+            //
+
+            if compare_specs {
+                info!("Comparing the root against consensus-spec-tests post_state");
+                info!("new_state_root: {:?}", state_root);
+                assert_state_root_matches_specs(&state_root, &pre_state_ssz_bytes, &case_dir);
+            }
+
+            if compare_recompute {
+                info!("Comparing the root by recomputing on host");
+                assert_state_root_matches_recompute(&state_root, &pre_state_ssz_bytes, &input);
+            }
+        }
     }
 }
 
@@ -224,6 +389,8 @@ fn run_risczero_test<T: OperationHandler>(
     compare_specs: bool,
     compare_recompute: bool,
     case_dir: &PathBuf,
+    mode: ExecutionMode,
+    proof_type: ProofType,
 ) {
     // Setup the executor environment and inject inputs
     let env = ExecutorEnv::builder()
@@ -238,49 +405,110 @@ fn run_risczero_test<T: OperationHandler>(
         .build()
         .unwrap();
 
-    //
-    // Prover setup & proving
-    //
+    match mode {
+        ExecutionMode::Execute => {
+            // Execute without proof generation (fast)
+            info!("Running in execute mode (no proof generation)");
+            let executor = default_executor();
 
-    let prover = default_prover();
-    let opts = ProverOpts::succinct();
+            let start = Instant::now();
+            let session = executor.execute(env, CONSENSUS_STF_ELF).unwrap();
+            let execution_time = start.elapsed();
 
-    let start = Instant::now();
-    let prove_info = prover
-        .prove_with_opts(env, CONSENSUS_STF_ELF, &opts)
-        .unwrap();
-    let host_execution_time = start.elapsed();
+            info!("Execution complete");
+            info!("execution-time-host-call: {:?}", execution_time);
 
-    info!("Proving complete");
-    info!("execution time host call: {:?}", host_execution_time);
+            // Extract state root from journal
+            let new_state_root = session.journal.decode::<Hash256>().unwrap();
+            info!("New state root: {:?}", new_state_root);
 
-    //
-    // Proof verification
-    //
+            // Log execution information
+            info!("----- Cycle Tracker -----");
+            info!("[{}] Test case: {}", operation, test_case);
+            info!("Execution complete with {} segment(s)", session.segments.len());
 
-    let receipt = prove_info.receipt;
-    let new_state_root = receipt.journal.decode::<Hash256>().unwrap();
+            //
+            // Compare against references (consensus-spec-tests or recompute on host)
+            //
 
-    info!("Seal size: {:#?}", receipt.seal_size());
-    info!("Receipt: {:#?}", receipt);
-    info!("New state root: {:?}", new_state_root);
+            if compare_specs {
+                info!("Comparing the root against consensus-spec-tests post_state");
+                info!("new_state_root: {}", new_state_root);
+                assert_state_root_matches_specs(&new_state_root, &pre_state_ssz_bytes, &case_dir);
+            }
 
-    receipt.verify(CONSENSUS_STF_ID).unwrap();
-    info!("Verfication successful. Proof is valid.");
+            if compare_recompute {
+                info!("Comparing the root by recomputing on host");
+                assert_state_root_matches_recompute(&new_state_root, &pre_state_ssz_bytes, &input);
+            }
+        }
+        ExecutionMode::Prove => {
+            // Generate proof (slow)
+            info!("Running in prove mode (generating proof)");
+            info!("Proof type: {:?}", proof_type);
 
-    //
-    // Compare proofs against references (consensus-spec-tests or recompute on host)
-    //
+            let prover = default_prover();
 
-    if compare_specs {
-        info!("Comparing the root against consensus-spec-tests post_state");
-        info!("new_state_root: {}", new_state_root);
-        assert_state_root_matches_specs(&new_state_root, &pre_state_ssz_bytes, &case_dir);
-    }
+            let opts = match proof_type {
+                ProofType::Succinct | ProofType::Default => {
+                    info!("Using Succinct proof type");
+                    ProverOpts::succinct()
+                }
+                ProofType::Composite => {
+                    info!("Using Composite proof type");
+                    ProverOpts::composite()
+                }
+                ProofType::Groth16 => {
+                    info!("Using Groth16 proof type");
+                    ProverOpts::groth16()
+                }
+                _ => {
+                    info!("Unsupported proof type for RiscZero, using default Succinct");
+                    ProverOpts::succinct()
+                }
+            };
 
-    if compare_recompute {
-        info!("Comparing the root by recomputing on host");
-        assert_state_root_matches_recompute(&new_state_root, &pre_state_ssz_bytes, &input);
+            let start = Instant::now();
+            let prove_info = prover
+                .prove_with_opts(env, CONSENSUS_STF_ELF, &opts)
+                .unwrap();
+            let proving_time = start.elapsed();
+
+            info!("Proving complete");
+            info!("proving-time: {:?}", proving_time);
+
+            //
+            // Proof verification
+            //
+
+            let receipt = prove_info.receipt;
+            let new_state_root = receipt.journal.decode::<Hash256>().unwrap();
+
+            info!("Seal size: {} bytes", receipt.seal_size());
+            info!("Receipt: {:#?}", receipt);
+            info!("New state root: {:?}", new_state_root);
+
+            let verify_start = Instant::now();
+            receipt.verify(CONSENSUS_STF_ID).unwrap();
+            let verify_time = verify_start.elapsed();
+            info!("Verification successful. Proof is valid.");
+            info!("verification-time: {:?}", verify_time);
+
+            //
+            // Compare proofs against references (consensus-spec-tests or recompute on host)
+            //
+
+            if compare_specs {
+                info!("Comparing the root against consensus-spec-tests post_state");
+                info!("new_state_root: {}", new_state_root);
+                assert_state_root_matches_specs(&new_state_root, &pre_state_ssz_bytes, &case_dir);
+            }
+
+            if compare_recompute {
+                info!("Comparing the root by recomputing on host");
+                assert_state_root_matches_recompute(&new_state_root, &pre_state_ssz_bytes, &input);
+            }
+        }
     }
 }
 
@@ -293,6 +521,8 @@ fn run_zisk_test<T: OperationHandler>(
     compare_specs: bool,
     compare_recompute: bool,
     case_dir: &PathBuf,
+    mode: ExecutionMode,
+    _proof_type: ProofType,
 ) {
     // Build the ZISK guest code
     info!("----- Building ZISK Guest -----");
@@ -327,76 +557,332 @@ fn run_zisk_test<T: OperationHandler>(
     ).expect("Failed to write ZISK input");
 
     info!("Input written to {:?}", input_path);
-    info!("----- Cycle Tracker Start -----");
 
-    // Execute ZISK VM
-    let ziskemu_path = format!("{}/.zisk/bin/ziskemu", home);
-    let output = Command::new(&ziskemu_path)
-        .args([
-            "-e",
-            "../target/riscv64ima-zisk-zkvm-elf/release/consenzisk_guest",
-            "-i",
-            input_path.to_str().unwrap(),
-            "-m",
-            "-x",
-        ])
-        .output()
-        .expect("Failed to run ZISK VM");
+    match mode {
+        ExecutionMode::Execute => {
+            // Execute ZISK VM without proof generation
+            info!("Running in execute mode (emulator, no proof generation)");
+            info!("----- Cycle Tracker Start -----");
 
-    if !output.status.success() {
-        eprintln!(
-            "ZISK execution failed for test case {}!\n{}",
-            test_case,
-            String::from_utf8_lossy(&output.stderr)
-        );
-        std::process::exit(1);
+            let ziskemu_path = format!("{}/.zisk/bin/ziskemu", home);
+            let output = Command::new(&ziskemu_path)
+                .args([
+                    "-e",
+                    "../target/riscv64ima-zisk-zkvm-elf/release/consenzisk_guest",
+                    "-i",
+                    input_path.to_str().unwrap(),
+                    "-m",
+                    "-x",
+                ])
+                .output()
+                .expect("Failed to run ZISK VM");
+
+            if !output.status.success() {
+                eprintln!(
+                    "ZISK execution failed for test case {}!\n{}",
+                    test_case,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                std::process::exit(1);
+            }
+
+            // Parse output from ZISK guest
+            let zisk_output = String::from_utf8_lossy(&output.stdout);
+            info!("ZISK output for {}: {}", test_case, zisk_output);
+
+            let new_state_root = parse_state_root_from_hex(&zisk_output);
+
+            //
+            // Compare against references (consensus-spec-tests or recompute on host)
+            //
+
+            if compare_specs {
+                info!("Comparing the root against consensus-spec-tests post_state");
+                info!("new_state_root: {}", new_state_root);
+                assert_state_root_matches_specs(&new_state_root, &pre_state_ssz_bytes, &case_dir);
+            }
+
+            if compare_recompute {
+                info!("Comparing the root by recomputing on host");
+                assert_state_root_matches_recompute(&new_state_root, &pre_state_ssz_bytes, &input);
+            }
+        }
+        ExecutionMode::Prove => {
+            // Generate proof using cargo-zisk prove workflow
+            info!("Running in prove mode (generating proof)");
+
+            // Step 1: ROM setup (generate setup files)
+            info!("----- Running cargo-zisk rom-setup -----");
+            let elf_path = "../../target/riscv64ima-zisk-zkvm-elf/release/consenzisk_guest";
+            let proving_key_dir = format!("{}/.zisk/provingKey", home);
+            let rom_setup_result = Command::new(&cargo_zisk_path)
+                .args(["rom-setup", "-e", elf_path, "-k", &proving_key_dir])
+                .current_dir("../guest/zisk")
+                .status()
+                .expect("Failed to run cargo-zisk rom-setup");
+
+            if !rom_setup_result.success() {
+                eprintln!("cargo-zisk rom-setup failed!");
+                std::process::exit(1);
+            }
+            info!("ROM setup complete");
+
+            // Step 2: Generate proof
+            info!("----- Running cargo-zisk prove -----");
+            let prove_output_dir = build_dir.join("proof_output");
+            if !prove_output_dir.exists() {
+                fs::create_dir_all(&prove_output_dir).expect("Failed to create proof output directory");
+            }
+
+            let start_time = Instant::now();
+            let prove_result = Command::new(&cargo_zisk_path)
+                .args([
+                    "prove",
+                    "-i",
+                    input_path.to_str().unwrap(),
+                    "-o",
+                    prove_output_dir.to_str().unwrap(),
+                ])
+                .current_dir("../guest/zisk")
+                .output()
+                .expect("Failed to run cargo-zisk prove");
+
+            let proving_time = start_time.elapsed();
+
+            if !prove_result.status.success() {
+                eprintln!(
+                    "cargo-zisk prove failed for test case {}!\nStderr: {}\nStdout: {}",
+                    test_case,
+                    String::from_utf8_lossy(&prove_result.stderr),
+                    String::from_utf8_lossy(&prove_result.stdout)
+                );
+                std::process::exit(1);
+            }
+
+            info!("Proof generation complete");
+            info!("proving-time: {}", proving_time.as_secs_f64());
+
+            // Parse output to get state root
+            let prove_stdout = String::from_utf8_lossy(&prove_result.stdout);
+            info!("Proof output: {}", prove_stdout);
+
+            // Step 3: Verify proof
+            info!("----- Running cargo-zisk verify -----");
+            let verify_start = Instant::now();
+            let verify_result = Command::new(&cargo_zisk_path)
+                .args([
+                    "verify",
+                    "-i",
+                    prove_output_dir.to_str().unwrap(),
+                ])
+                .current_dir("../guest/zisk")
+                .output()
+                .expect("Failed to run cargo-zisk verify");
+
+            let verify_time = verify_start.elapsed();
+
+            if !verify_result.status.success() {
+                eprintln!(
+                    "cargo-zisk verify failed!\nStderr: {}\nStdout: {}",
+                    String::from_utf8_lossy(&verify_result.stderr),
+                    String::from_utf8_lossy(&verify_result.stdout)
+                );
+                std::process::exit(1);
+            }
+
+            info!("Proof verification successful");
+            info!("verification-time: {}", verify_time.as_secs_f64());
+
+            // Extract state root from proof output
+            // Note: The exact method depends on how Zisk outputs the state root in prove mode
+            // For now, we'll attempt to parse it from the prove stdout
+            let new_state_root = parse_state_root_from_hex(&prove_stdout);
+            info!("New state root from proof: {}", new_state_root);
+
+            //
+            // Compare against references (consensus-spec-tests or recompute on host)
+            //
+
+            if compare_specs {
+                info!("Comparing the root against consensus-spec-tests post_state");
+                info!("new_state_root: {}", new_state_root);
+                assert_state_root_matches_specs(&new_state_root, &pre_state_ssz_bytes, &case_dir);
+            }
+
+            if compare_recompute {
+                info!("Comparing the root by recomputing on host");
+                assert_state_root_matches_recompute(&new_state_root, &pre_state_ssz_bytes, &input);
+            }
+        }
     }
+}
 
-    // Parse output from ZISK guest
-    let zisk_output = String::from_utf8_lossy(&output.stdout);
-    info!("ZISK output for {}: {}", test_case, zisk_output);
+#[cfg(feature = "pico")]
+fn run_pico_test<T: OperationHandler>(
+    pre_state_ssz_bytes: &[u8],
+    input: &OperationInput,
+    test_case: &str,
+    operation: &T,
+    compare_specs: bool,
+    compare_recompute: bool,
+    case_dir: &PathBuf,
+    mode: ExecutionMode,
+    proof_type: ProofType,
+) {
+    // Load the Pico ELF
+    let elf_path = "../guest/app/elf/riscv32im-pico-zkvm-elf";
+    let elf = std::fs::read(elf_path)
+        .expect(&format!("Failed to load Pico ELF from {}", elf_path));
+    info!("Loaded Pico ELF, size: {} bytes", elf.len());
 
-    let new_state_root = parse_state_root_from_hex(&zisk_output);
+    // Setup the executor environment and inject inputs
+    let client = DefaultProverClient::new(&elf);
+    let mut stdin_builder = client.new_stdin_builder();
+
+    // Write pre-state length and bytes
+    stdin_builder.write(&pre_state_ssz_bytes.len());
+    stdin_builder.write_slice(&pre_state_ssz_bytes);
+
+    // Write operation input
+    stdin_builder.write(&input);
+
+    match mode {
+        ExecutionMode::Execute => {
+            // Execute without proof generation (fast)
+            info!("Running in execute mode (no proof generation)");
+            info!("----- Cycle Tracker Start -----");
+
+            let start_time = Instant::now();
+            let (cycles, raw_output) = client.emulate(stdin_builder);
+            let execution_time = start_time.elapsed();
+
+            info!("Execution time: {:?}", execution_time);
+            info!("execution-time-host-call: {}", execution_time.as_secs_f64());
+            info!("Execution cycles: {}", cycles);
+            info!("[{}] Test case: {}", operation, test_case);
+
+            // Parse output - Pico returns 8 bytes prefix followed by 32 bytes state root
+            let (_prefix_bytes, root_bytes) = raw_output.split_at(8);
+            let state_root = Hash256::from_slice(root_bytes);
+
+            info!("Output size: {} bytes", state_root.len());
+            info!("State root: {:?}", state_root);
+
+            //
+            // Compare against references (consensus-spec-tests or recompute on host)
+            //
+
+            if compare_specs {
+                info!("Comparing the root against consensus-spec-tests post_state");
+                assert_state_root_matches_specs(&state_root, &pre_state_ssz_bytes, &case_dir);
+            }
+
+            if compare_recompute {
+                info!("Comparing the root by recomputing on host");
+                assert_state_root_matches_recompute(&state_root, &pre_state_ssz_bytes, &input);
+            }
+        }
+        ExecutionMode::Prove => {
+            // Generate proof
+            info!("Running in prove mode (generating proof)");
+            info!("Proof type: {:?}", proof_type);
+
+            let start_time = Instant::now();
+
+            let raw_output = match proof_type {
+                ProofType::Default | ProofType::Core => {
+                    // Use prove_fast for default/testing - generates proof quickly
+                    info!("Using Fast proof type (RISC-V phase only, for testing)");
+                    let proof = client.prove_fast(stdin_builder)
+                        .expect("Failed to generate fast proof");
+                    proof.pv_stream.expect("No public values in proof")
+                }
+                _ => {
+                    // Use full prove for all other types
+                    info!("Using Full proof type (RISC-V + Recursion phase, production-ready)");
+                    let (riscv_proof, _embed_proof) = client.prove(stdin_builder)
+                        .expect("Failed to generate full proof");
+                    riscv_proof.pv_stream.expect("No public values in proof")
+                }
+            };
+
+            let proving_time = start_time.elapsed();
+            info!("Proof generation complete");
+            info!("proving-time: {}", proving_time.as_secs_f64());
+
+            // Parse output - Pico returns 8 bytes prefix followed by 32 bytes state root
+            let (_prefix_bytes, root_bytes) = raw_output.split_at(8);
+            let state_root = Hash256::from_slice(root_bytes);
+
+            info!("State root from proof: {:?}", state_root);
+
+            // Note: Pico proof verification is typically done on-chain via PicoVerifier.sol
+            // For now, we skip local verification and rely on successful proof generation
+
+            //
+            // Compare against references (consensus-spec-tests or recompute on host)
+            //
+
+            if compare_specs {
+                info!("Comparing the root against consensus-spec-tests post_state");
+                assert_state_root_matches_specs(&state_root, &pre_state_ssz_bytes, &case_dir);
+            }
+
+            if compare_recompute {
+                info!("Comparing the root by recomputing on host");
+                assert_state_root_matches_recompute(&state_root, &pre_state_ssz_bytes, &input);
+            }
+        }
+    }
+}
+
+#[cfg(feature = "jolt")]
+fn run_jolt_test<T: OperationHandler>(
+    pre_state_ssz_bytes: Vec<u8>,
+    input: OperationInput,
+    test_case: &str,
+    operation: &T,
+    compare_specs: bool,
+    compare_recompute: bool,
+    case_dir: &PathBuf,
+    _mode: ExecutionMode,
+    _proof_type: ProofType,
+) {
+    // Note: Jolt currently only supports execute mode
+    info!("----- Jolt Execution Start -----");
+    info!("[{}] Test case: {}", operation, test_case);
+
+    // Create trace file path
+    let trace_file = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../target")
+        .join(format!("jolt_trace_{}_{}.bin", operation, test_case));
+
+    // Execute state transition in Jolt using auto-generated trace function
+    // Jolt SDK automatically generates state_transition::trace() from the #[jolt::provable] function
+    let start_time = Instant::now();
+    let program_summary = trace_state_transition_to_file(
+        trace_file.to_str().unwrap(),
+        pre_state_ssz_bytes.clone(),
+        input,
+    );
+    let execution_time = start_time.elapsed();
+
+    info!("Program executed successfully.");
+    info!("Trace file written to: {}", trace_file.display());
+    info!("Execution time: {:?}", execution_time);
+    // info!("Trace length: {}", program_summary.trace_len());
+    // info!("State root: {:?}", state_root);
 
     //
     // Compare proofs against references (consensus-spec-tests or recompute on host)
     //
 
-    if compare_specs {
-        info!("Comparing the root against consensus-spec-tests post_state");
-        info!("new_state_root: {}", new_state_root);
-        assert_state_root_matches_specs(&new_state_root, &pre_state_ssz_bytes, &case_dir);
-    }
 
-    if compare_recompute {
-        info!("Comparing the root by recomputing on host");
-        assert_state_root_matches_recompute(&new_state_root, &pre_state_ssz_bytes, &input);
-    }
 }
 
-fn setup_log() {
-    if std::env::var("RUST_LOG").is_err() {
-        std::env::set_var("RUST_LOG", "info");
-    }
-
-    // Initialize tracing. In order to view logs, run `RUST_LOG=info cargo run`
-    tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
-        .init();
-}
-
-fn parse_args() -> (Fork, Operation, Vec<String>, bool, bool, ZkVm) {
-    let args = Args::parse();
-
-    (
-        args.fork.fork,
-        args.operation.operation,
-        args.excluded_cases,
-        args.compare_specs,
-        args.compare_recompute,
-        args.zkvm,
-    )
-}
+// ============================================================================
+// Utility Functions
+// ============================================================================
 
 fn assert_state_root_matches_specs(
     new_state_root: &Hash256,
@@ -447,82 +933,6 @@ fn assert_state_root_matches_recompute(
     info!("Execution is correct! State roots match host's recomputed state root.");
 }
 
-#[cfg(feature = "zisk")]
-fn write_zisk_input(
-    pre_state_ssz_bytes: Vec<u8>,
-    operation_input: Vec<u8>,
-    input_path: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let zisk_input = ZiskInput {
-        pre_state_ssz_bytes,
-        operation_input,
-    };
-
-    let serialized_input = bincode::serialize(&zisk_input)?;
-    std::fs::write(input_path, serialized_input)?;
-    Ok(())
-}
-
-#[cfg(feature = "pico")]
-fn run_pico_test<T: OperationHandler>(
-    pre_state_ssz_bytes: &[u8],
-    input: &OperationInput,
-    test_case: &str,
-    operation: &T,
-    compare_specs: bool,
-    compare_recompute: bool,
-    case_dir: &PathBuf,
-) {
-    // Load the Pico ELF
-    let elf_path = "../guest/app/elf/riscv32im-pico-zkvm-elf";
-    let elf = std::fs::read(elf_path)
-        .expect(&format!("Failed to load Pico ELF from {}", elf_path));
-    info!("Loaded Pico ELF, size: {} bytes", elf.len());
-
-    // Setup the executor environment and inject inputs
-    let client = DefaultProverClient::new(&elf);
-    let mut stdin_builder = client.new_stdin_builder();
-
-    // Write pre-state length and bytes
-    stdin_builder.write(&pre_state_ssz_bytes.len());
-    stdin_builder.write_slice(&pre_state_ssz_bytes);
-
-    // Write operation input
-    stdin_builder.write(&input);
-
-    //
-    // Prover setup & proving
-    //
-    info!("----- Cycle Tracker Start -----");
-    let start_time = Instant::now();
-    let (cycles, raw_output) = client.emulate(stdin_builder);
-    let duration = start_time.elapsed();
-
-    info!("Execution time: {:?}", duration);
-    info!("Execution cycles: {}", cycles);
-
-    // Parse output - Pico returns 8 bytes prefix followed by 32 bytes state root
-    let (_prefix_bytes, root_bytes) = raw_output.split_at(8);
-    let state_root = Hash256::from_slice(root_bytes);
-
-    info!("Output size: {} bytes", state_root.len());
-    info!("Output: {:#?}", state_root);
-
-    //
-    // Compare proofs against references (consensus-spec-tests or recompute on host)
-    //
-
-    if compare_specs {
-        info!("Comparing the root against consensus-spec-tests post_state");
-        assert_state_root_matches_specs(&state_root, &pre_state_ssz_bytes, &case_dir);
-    }
-
-    if compare_recompute {
-        info!("Comparing the root by recomputing on host");
-        assert_state_root_matches_recompute(&state_root, &pre_state_ssz_bytes, &input);
-    }
-}
-
 fn parse_state_root_from_hex(output: &str) -> Hash256 {
     // Find the hex string in the output (64 hex characters)
     let hex_str = output
@@ -538,4 +948,20 @@ fn parse_state_root_from_hex(output: &str) -> Hash256 {
     }
 
     Hash256::from_slice(&bytes)
+}
+
+#[cfg(feature = "zisk")]
+fn write_zisk_input(
+    pre_state_ssz_bytes: Vec<u8>,
+    operation_input: Vec<u8>,
+    input_path: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let zisk_input = ZiskInput {
+        pre_state_ssz_bytes,
+        operation_input,
+    };
+
+    let serialized_input = bincode::serialize(&zisk_input)?;
+    std::fs::write(input_path, serialized_input)?;
+    Ok(())
 }

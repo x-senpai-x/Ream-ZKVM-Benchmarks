@@ -8,13 +8,13 @@ members = [
     "guest/risc0/methods/guest",
     "guest/zisk",
     "guest/app",
+    "guest/jolt",
 ]
 
 [workspace.dependencies]
 bincode = "1.3"
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing" }
 ethereum_ssz = "0.9"
-pico-sdk = { git = "https://github.com/brevis-network/pico", tag = "v1.1.6" }
 ream-consensus = { git = "https://github.com/ReamLabs/ream.git", package = "ream-consensus-beacon", features = ["zkvm"] }
 sha2 = "0.10.8"
 ssz_types = { git = "https://github.com/ReamLabs/ssz_types", branch = "magic-extended-list" }
@@ -25,3 +25,13 @@ tree_hash_derive = "0.10"
 [patch.crates-io]
 ethereum_hashing = { git = "https://github.com/ReamLabs/ethereum_hashing" }
 ssz_types = { git = "https://github.com/ReamLabs/ssz_types", branch = "magic-extended-list" } # Extends 2^29 to 2^40 list root
+
+# Jolt dependencies - Commented out to avoid conflicts with other ZKVMs
+# These patches cause ark-bn254 v0.5.0 (crates.io) to be replaced with incompatible fork
+# jolt-sdk already specifies its required arkworks versions via git dependencies
+# ark-ff = { git = "https://github.com/a16z/arkworks-algebra", branch = "dev/twist-shout" }
+# ark-ec = { git = "https://github.com/a16z/arkworks-algebra", branch = "dev/twist-shout" }
+# jolt-optimizations = { git = "https://github.com/a16z/arkworks-algebra", branch = "dev/twist-shout" }
+# ark-serialize = { git = "https://github.com/a16z/arkworks-algebra", branch = "dev/twist-shout" }
+# ark-bn254 = { git = "https://github.com/a16z/arkworks-algebra", branch = "dev/twist-shout" }
+# allocative = { git = "https://github.com/facebookexperimental/allocative", rev = "85b773d85d526d068ce94724ff7a7b81203fc95e" }

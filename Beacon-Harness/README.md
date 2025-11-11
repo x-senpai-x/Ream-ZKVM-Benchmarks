@@ -1,6 +1,6 @@
 # Beacon Harness
 
-`Beacon Harness` is a unified benchmark suite for Ethereum consensus state transition functions supporting [RISC Zero zkVM](https://github.com/risc0/risc0), [SP1](https://github.com/succinctlabs/sp1), [ZISK](https://github.com/0xPolygonHermez/zisk), and [Pico](https://github.com/brevis-network/pico). It leverages [ream](https://github.com/ReamLabs/ream) to provide comprehensive performance metrics for consensus operations.
+`Beacon Harness` is a unified benchmark suite for Ethereum consensus state transition functions supporting [RISC Zero zkVM](https://github.com/risc0/risc0), [SP1](https://github.com/succinctlabs/sp1), [ZISK](https://github.com/0xPolygonHermez/zisk), [Pico](https://github.com/brevis-network/pico), and [Jolt](https://github.com/a16z/jolt). It leverages [ream](https://github.com/ReamLabs/ream) to provide comprehensive performance metrics for consensus operations.
 
 ## Requirements
 
@@ -9,6 +9,7 @@
 - [SP1](https://docs.succinct.xyz/getting-started/install.html) (for SP1 backend)
 - [ZISK](https://github.com/0xPolygonHermez/zisk) (for ZISK backend)
 - [Pico](https://github.com/brevis-network/pico) (for Pico backend - requires Rust nightly)
+- [Jolt](https://github.com/a16z/jolt) (for Jolt backend)
 
 ## Running the Project
 
@@ -47,6 +48,11 @@ With Pico:
 make pico
 ```
 
+With Jolt:
+```sh
+make jolt
+```
+
 With default backend (RISC Zero):
 ```sh
 make all
@@ -60,6 +66,7 @@ make sp1-block-all    # Using SP1
 make r0-block-all     # Using RISC Zero
 make zisk-block-all   # Using ZISK
 make pico-block-all   # Using Pico
+make jolt-block-all   # Using Jolt
 make block-all        # Using default backend
 ```
 
@@ -69,6 +76,7 @@ make sp1-epoch-all    # Using SP1
 make r0-epoch-all     # Using RISC Zero
 make zisk-epoch-all   # Using ZISK
 make pico-epoch-all   # Using Pico
+make jolt-epoch-all   # Using Jolt
 make epoch-all        # Using default backend
 ```
 
@@ -81,6 +89,7 @@ make run-block-<OPERATION_NAME> ZKVM=sp1        # Using SP1
 make run-block-<OPERATION_NAME> ZKVM=risc-zero  # Using RISC Zero
 make run-block-<OPERATION_NAME> ZKVM=zisk       # Using ZISK
 make run-block-<OPERATION_NAME> ZKVM=pico       # Using Pico
+make run-block-<OPERATION_NAME> ZKVM=jolt       # Using Jolt
 ```
 
 Available block operations:
@@ -102,6 +111,7 @@ make run-epoch-<OPERATION_NAME> ZKVM=sp1        # Using SP1
 make run-epoch-<OPERATION_NAME> ZKVM=risc-zero  # Using RISC Zero
 make run-epoch-<OPERATION_NAME> ZKVM=zisk       # Using ZISK
 make run-epoch-<OPERATION_NAME> ZKVM=pico       # Using Pico
+make run-epoch-<OPERATION_NAME> ZKVM=jolt       # Using Jolt
 ```
 
 Available epoch operations:
@@ -126,12 +136,17 @@ Available epoch operations:
 make run-block-attestation ZKVM=sp1
 # Run attestation benchmark with Pico
 make run-block-attestation ZKVM=pico
+# Run attestation benchmark with Jolt
+make run-block-attestation ZKVM=jolt
 
 # Run all block benchmarks with RISC Zero
 make r0-block-all
 
 # Run all block benchmarks with Pico
 make pico-block-all
+
+# Run all block benchmarks with Jolt
+make jolt-block-all
 
 # Run justification benchmark with default backend
 make run-epoch-justification_and_finalization
@@ -141,6 +156,9 @@ make sp1
 
 # Run all benchmarks with Pico
 make pico
+
+# Run all benchmarks with Jolt
+make jolt
 ```
 
 ### Other Commands
@@ -203,3 +221,4 @@ make pico
 - The `all` target excludes `execution_payload` (not implemented) and `withdrawals` (incompatible with BeaconState workaround) from block operations
 - Zisk only has total execution time available for benchmarks, work is ongoing to capture detailed cycle counts
 - Pico is an optional feature and requires Rust nightly. Other zkVMs work with stable Rust.
+- Jolt provides trace length metrics and execution time for benchmarks

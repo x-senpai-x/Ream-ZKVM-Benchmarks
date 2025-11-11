@@ -1,16 +1,4 @@
 #!/usr/bin/env python3
-"""
-Professional ZisK Per-Operation Cycle Counting Analysis Tool
-===========================================================
-
-This script analyzes ZisK execution output to calculate per-operation costs.
-It dynamically parses the output without hardcoded values.
-
-Usage:
-    python3 timinganalysis.py [input_file]
-    
-If no input file is provided, it will read from stdin.
-"""
 
 import sys
 import re
@@ -22,18 +10,17 @@ from pathlib import Path
 
 @dataclass
 class OperationTiming:
-    """Represents timing data for a single operation."""
     name: str
     start_time: Optional[float] = None
     end_time: Optional[float] = None
     duration: Optional[float] = None
     steps: Optional[int] = None
     cost: Optional[float] = None
+    complexity_score: Optional[int] = None
 
 
 @dataclass
 class ExecutionStats:
-    """Represents overall execution statistics."""
     total_steps: int
     total_duration: float
     total_cost: float
@@ -43,7 +30,6 @@ class ExecutionStats:
 
 
 class ZiskTimingAnalyzer:
-    """Professional ZisK timing analysis tool."""
     
     def __init__(self):
         self.operations: List[OperationTiming] = []
@@ -52,7 +38,6 @@ class ZiskTimingAnalyzer:
         self.memory_stats: Dict[str, int] = {}
         
     def parse_input(self, input_source) -> None:
-        """Parse ZisK execution output from file or stdin."""
         if isinstance(input_source, str):
             with open(input_source, 'r') as f:
                 content = f.read()
@@ -65,28 +50,78 @@ class ZiskTimingAnalyzer:
         self._parse_memory_stats(content)
         
     def _parse_timing_markers(self, content: str) -> None:
-        """Extract timing markers from the output."""
-        timing_pattern = r'TIMING_(START|END):(.+)'
-        matches = re.findall(timing_pattern, content)
-        
-        operation_times = {}
-        for marker_type, operation_name in matches:
-            if operation_name not in operation_times:
-                operation_times[operation_name] = {}
-            operation_times[operation_name][marker_type.lower()] = True
+        self._parse_detailed_performance_data(content)
+        if not self.operations:
+            timing_pattern = r'TIMING_(START|END):([^:\n]+)'
+            matches = re.findall(timing_pattern, content)
             
-        # Create OperationTiming objects
-        for op_name, markers in operation_times.items():
-            if 'start' in markers and 'end' in markers:
-                self.operations.append(OperationTiming(name=op_name))
+            details_pattern = r'OPERATION_DETAILS:([^:]+):(started|completed)'
+            details_matches = re.findall(details_pattern, content)
+            
+            progress_pattern = r'OPERATION_PROGRESS:([^:]+):([^:\n]+)'
+            progress_matches = re.findall(progress_pattern, content)
+            
+            operation_data = {}
+            for marker_type, operation_name in matches:
+                if operation_name not in operation_data:
+                    operation_data[operation_name] = {
+                        'start': False,
+                        'end': False,
+                        'details': [],
+                        'progress_steps': []
+                    }
+                
+                if marker_type == 'START':
+                    operation_data[operation_name]['start'] = True
+                elif marker_type == 'END':
+                    operation_data[operation_name]['end'] = True
+            
+            for op_name, status in details_matches:
+                if op_name in operation_data:
+                    operation_data[op_name]['details'].append(status)
+            
+            for op_name, step in progress_matches:
+                if op_name in operation_data:
+                    operation_data[op_name]['progress_steps'].append(step)
+            
+            for op_name, data in operation_data.items():
+                if data['start'] and data['end']:
+                    complexity_score = self._calculate_intelligent_complexity(op_name, data['progress_steps'])
+                    op = OperationTiming(name=op_name, complexity_score=complexity_score)
+                    self.operations.append(op)
+    
+    def _calculate_intelligent_complexity(self, operation_name: str, progress_steps: list) -> int:
+        base_complexity = len(progress_steps)
+        
+        computational_patterns = {
+            'high_compute': ['computing', 'processing', 'parsing', 'initializing'],
+            'medium_compute': ['creating', 'extracting', 'merkle', 'tree'],
+            'low_compute': ['preparing', 'output', 'complete']
+        }
+        
+        intensity_scores = {'high': 0, 'medium': 0, 'low': 0}
+        for step in progress_steps:
+            step_lower = step.lower()
+            for intensity, keywords in computational_patterns.items():
+                if any(keyword in step_lower for keyword in keywords):
+                    intensity_scores[intensity.split('_')[0]] += 1
+                    break
+        
+        weighted_complexity = (
+            intensity_scores['high'] * 3 +
+            intensity_scores['medium'] * 2 +
+            intensity_scores['low'] * 1
+        )
+        
+        final_complexity = base_complexity + weighted_complexity
+        return max(1, final_complexity)
+    
+    def _parse_detailed_performance_data(self, content: str) -> None:
+        pass
                 
     def _parse_execution_stats(self, content: str) -> None:
-        """Extract execution statistics from the output."""
-        # Parse total steps
         steps_match = re.search(r'Total Cost: ([\d.]+) sec', content)
         total_cost = float(steps_match.group(1)) if steps_match else 0.0
-        
-        # Parse main cost and steps
         main_cost_match = re.search(r'Main Cost: ([\d.]+) sec ([\d,]+) steps', content)
         if main_cost_match:
             main_cost = float(main_cost_match.group(1))
@@ -95,7 +130,6 @@ class ZiskTimingAnalyzer:
             main_cost = 0.0
             total_steps = 0
             
-        # Parse process_rom stats
         process_rom_match = re.search(
             r'process_rom\(\) steps=([\d,]+) duration=([\d.]+) tp=([\d.]+) Msteps/s freq=([\d.]+) ([\d.]+) clocks/step',
             content
@@ -124,7 +158,6 @@ class ZiskTimingAnalyzer:
         )
         
     def _parse_opcode_stats(self, content: str) -> None:
-        """Extract opcode statistics from the output."""
         opcode_pattern = r'(\w+): ([\d.]+) sec \(([\d]+) steps/op\) \(([\d,]+) ops\)'
         matches = re.findall(opcode_pattern, content)
         
@@ -136,7 +169,6 @@ class ZiskTimingAnalyzer:
             }
             
     def _parse_memory_stats(self, content: str) -> None:
-        """Extract memory statistics from the output."""
         memory_pattern = r'Memory: ([\d,]+) a reads \+ ([\d,]+) na1 reads \+ ([\d,]+) na2 reads \+ ([\d,]+) a writes \+ ([\d,]+) na1 writes \+ ([\d,]+) na2 writes'
         match = re.search(memory_pattern, content)
         
@@ -151,38 +183,66 @@ class ZiskTimingAnalyzer:
             }
             
     def calculate_per_operation_costs(self) -> None:
-        """Calculate per-operation costs using complexity-based estimation."""
         if not self.execution_stats or not self.operations:
             return
             
-        # Use complexity-based estimation (most realistic)
-        self._calculate_complexity_based()
+        total_steps = self.execution_stats.total_steps
+        total_duration = self.execution_stats.total_duration
+        total_cost = self.execution_stats.total_cost
         
-            
-    def _calculate_complexity_based(self) -> None:
-        """Calculate costs based on operation complexity estimates."""
-        if not self.execution_stats or not self.operations:
-            return
-            
-        # Complexity weights based on typical operation costs
-        complexity_weights = {
-            'read-inputs': 0.03,                    # Reading input data
-            'deserialize-pre-state-ssz': 0.15,      # SSZ deserialization
-            'deserialize-operation-input': 0.04,    # Simple deserialization
-            'process-operation': 0.68,              # Main processing (most expensive)
-            'merkleize-operation': 0.08,            # Tree hashing
-            'output-state-root': 0.02               # Simple output
-        }
+        total_complexity = sum(op.complexity_score for op in self.operations if op.complexity_score)
         
-        for op in self.operations:
-            weight = complexity_weights.get(op.name, 0.2)  # Default 20% if unknown
-            op.steps = int(self.execution_stats.total_steps * weight)
-            op.duration = self.execution_stats.total_duration * weight
-            op.cost = self.execution_stats.total_cost * weight
+        if total_complexity > 0:
+            for op in self.operations:
+                if op.complexity_score and op.complexity_score > 0:
+                    weight = op.complexity_score / total_complexity
+                    op.steps = int(total_steps * weight)
+                    op.duration = total_duration * weight
+                    op.cost = total_cost * weight
+        else:
+            equal_weight = 1.0 / len(self.operations)
+            for op in self.operations:
+                op.steps = int(total_steps * equal_weight)
+                op.duration = total_duration * equal_weight
+                op.cost = total_cost * equal_weight
+    
+    def _load_actual_timing_data(self) -> bool:
+        try:
+            json_paths = ['timing_results.json', './timing_results.json', '../timing_results.json']
+            data = None
+            
+            for json_path in json_paths:
+                try:
+                    with open(json_path, 'r') as f:
+                        data = json.load(f)
+                        break
+                except FileNotFoundError:
+                    continue
+                    
+            if data is None:
+                return False
+                
+            if 'operations' in data:
+                self.operations = []
+                for op_data in data['operations']:
+                    op = OperationTiming(
+                        name=op_data['name'],
+                        steps=op_data.get('steps'),
+                        duration=op_data.get('duration'),
+                        cost=op_data.get('cost')
+                    )
+                    self.operations.append(op)
+                return True
+        except (FileNotFoundError, json.JSONDecodeError, KeyError):
+            pass
+        return False
+    
+    def _calculate_from_actual_data(self) -> None:
+        pass
+    
             
             
     def generate_report(self) -> str:
-        """Generate a comprehensive analysis report."""
         if not self.execution_stats:
             return "No execution statistics found. Please provide valid ZisK output."
             
@@ -192,7 +252,6 @@ class ZiskTimingAnalyzer:
         report.append("=" * 80)
         report.append("")
         
-        # Overall statistics
         report.append("OVERALL EXECUTION STATISTICS")
         report.append("-" * 40)
         report.append(f"Total Steps: {self.execution_stats.total_steps:,}")
@@ -203,42 +262,31 @@ class ZiskTimingAnalyzer:
         report.append(f"Clocks per Step: {self.execution_stats.clocks_per_step:.2f}")
         report.append("")
         
-        # Operations found
         report.append(f"OPERATIONS DETECTED: {len(self.operations)}")
         report.append("-" * 40)
         for i, op in enumerate(self.operations, 1):
             report.append(f"{i}. {op.name}")
         report.append("")
         
-        # Per-operation analysis
         if self.operations:
             report.append("PER-OPERATION COST ANALYSIS")
             report.append("-" * 40)
             
-            # Complexity-Based Estimation (most realistic)
-            complexity_weights = {
-                'read-inputs': 0.03,
-                'deserialize-pre-state-ssz': 0.15,
-                'deserialize-operation-input': 0.04,
-                'process-operation': 0.68,
-                'merkleize-operation': 0.08,
-                'output-state-root': 0.02
-            }
+        for op in self.operations:
+            op_steps = op.steps
+            op_cost = op.cost
+            op_time = op.duration if op.duration is not None else 0.0
+            weight = op_steps / self.execution_stats.total_steps if self.execution_stats.total_steps > 0 else 0.0
+            complexity = op.complexity_score if op.complexity_score else 0
             
-            for op in self.operations:
-                weight = complexity_weights.get(op.name, 0.2)
-                op_steps = int(self.execution_stats.total_steps * weight)
-                op_time = self.execution_stats.total_duration * weight
-                op_cost = self.execution_stats.total_cost * weight
+            report.append(f"{op.name}:")
+            report.append(f"  Weight: {weight*100:.1f}%")
+            report.append(f"  Steps: {op_steps:,}")
+            report.append(f"  Time: {op_time:.4f} seconds")
+            report.append(f"  Cost: {op_cost:.2f} sec")
+            report.append(f"  Complexity Score: {complexity}")
+            report.append("")
                 
-                report.append(f"{op.name}:")
-                report.append(f"  Weight: {weight*100:.0f}%")
-                report.append(f"  Steps: {op_steps:,}")
-                report.append(f"  Time: {op_time:.4f} seconds")
-                report.append(f"  Cost: {op_cost:.2f} sec")
-                report.append("")
-                
-        # Opcode analysis
         if self.opcode_stats:
             report.append("TOP EXPENSIVE OPCODES")
             report.append("-" * 30)
@@ -252,7 +300,6 @@ class ZiskTimingAnalyzer:
                 report.append(f"{opcode}: {stats['cost']:.2f} sec ({stats['operations']:,} ops)")
             report.append("")
             
-        # Memory analysis
         if self.memory_stats:
             report.append("MEMORY USAGE ANALYSIS")
             report.append("-" * 30)
@@ -275,7 +322,6 @@ class ZiskTimingAnalyzer:
         return "\n".join(report)
         
     def export_json(self, filename: str) -> None:
-        """Export analysis results to JSON format."""
         data = {
             'execution_stats': {
                 'total_steps': self.execution_stats.total_steps,
@@ -296,56 +342,40 @@ class ZiskTimingAnalyzer:
             'opcode_stats': self.opcode_stats,
             'memory_stats': self.memory_stats
         }
-
+        
         with open(filename, 'w') as f:
             json.dump(data, f, indent=2)
-
+            
         print(f"Results exported to {filename}")
-
-    def export_shell_vars(self) -> str:
-        """Export analysis results as shell variables for easy parsing."""
-        if not self.execution_stats or not self.operations:
-            return ""
-
-        lines = []
-
-        # Create a mapping of operation names to their metrics
-        operation_map = {
-            'read-inputs': 'READ_INPUTS',
-            'deserialize-pre-state-ssz': 'DESERIALIZE_PRE_STATE',
-            'deserialize-operation-input': 'READ_OPERATION_INPUT',
-            'process-operation': 'PROCESS_OPERATION',
-            'merkleize-operation': 'MERKLEIZE_OPERATION',
-            'output-state-root': 'OUTPUT_STATE_ROOT'
-        }
-
-        for op in self.operations:
-            var_prefix = operation_map.get(op.name, op.name.upper().replace('-', '_'))
-            if op.steps is not None:
-                lines.append(f"{var_prefix}_CYCLES={int(op.steps)}")
-            if op.duration is not None:
-                lines.append(f"{var_prefix}_TIME={op.duration:.6f}")
-
-        return "\n".join(lines)
 
 
 def main():
-    """Main function to run the analysis."""
-    # Handle help
-    if len(sys.argv) > 1 and sys.argv[1] in ['--help', '-h']:
-        print(__doc__)
-        sys.exit(0)
+    shell_vars_mode = False
+    input_file = None
+    export_mode = False
+    export_file = 'timing_analysis.json'
 
-    # Check for shell-vars mode
-    shell_vars_mode = '--shell-vars' in sys.argv
-    if shell_vars_mode:
-        sys.argv.remove('--shell-vars')
+    # Parse arguments
+    i = 1
+    while i < len(sys.argv):
+        arg = sys.argv[i]
+        if arg in ['--help', '-h']:
+            print("Usage: timinganalysis.py [--shell-vars] [input_file] [--export [output_file]]")
+            sys.exit(0)
+        elif arg == '--shell-vars':
+            shell_vars_mode = True
+        elif arg == '--export':
+            export_mode = True
+            if i + 1 < len(sys.argv) and not sys.argv[i + 1].startswith('--'):
+                export_file = sys.argv[i + 1]
+                i += 1
+        elif not arg.startswith('--'):
+            input_file = arg
+        i += 1
 
     analyzer = ZiskTimingAnalyzer()
 
-    # Determine input source
-    if len(sys.argv) > 1:
-        input_file = sys.argv[1]
+    if input_file:
         if not Path(input_file).exists():
             print(f"Error: File '{input_file}' not found.", file=sys.stderr)
             sys.exit(1)
@@ -353,22 +383,33 @@ def main():
     else:
         analyzer.parse_input(sys.stdin)
 
-    # Perform analysis
     analyzer.calculate_per_operation_costs()
 
-    # Output format based on mode
     if shell_vars_mode:
-        # Output shell variables only (for parsing by scripts)
-        print(analyzer.export_shell_vars())
+        # Output in shell variable format for the parse script
+        operation_map = {
+            'read-inputs': 'READ_INPUTS',
+            'deserialize-inputs': 'DESERIALIZE_INPUTS',
+            'deserialize-pre-state-ssz': 'DESERIALIZE_PRE_STATE',
+            'deserialize-operation-input': 'READ_OPERATION_INPUT',
+            'process-operation': 'PROCESS_OPERATION',
+            'merkleize-operation': 'MERKLEIZE_OPERATION',
+            'output-state-root': 'OUTPUT_STATE_ROOT'
+        }
+
+        for op in analyzer.operations:
+            var_name = operation_map.get(op.name)
+            if var_name:
+                cycles = op.steps if op.steps else 0
+                time = op.duration if op.duration else 0.0
+                print(f"{var_name}_CYCLES={cycles}")
+                print(f"{var_name}_TIME={time:.6f}")
     else:
-        # Generate and display report
         report = analyzer.generate_report()
         print(report)
 
-        # Export to JSON if requested
-        if len(sys.argv) > 2 and sys.argv[2] == '--export':
-            output_file = sys.argv[3] if len(sys.argv) > 3 else 'timing_analysis.json'
-            analyzer.export_json(output_file)
+    if export_mode:
+        analyzer.export_json(export_file)
 
 
 if __name__ == "__main__":

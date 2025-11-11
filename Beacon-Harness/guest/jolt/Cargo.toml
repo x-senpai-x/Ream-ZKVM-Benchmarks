@@ -1,0 +1,17 @@
+[package]
+name = "consenjolt"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+guest = []
+
+[dependencies]
+jolt = { package = "jolt-sdk", git = "https://github.com/a16z/jolt" , features = ["guest-std"]}
+ream-consensus = { workspace = true, features = ["zkvm"] }
+ream-lib = { path = "../../lib"}
+ethereum_hashing = { workspace = true }
+ethereum_ssz = {workspace = true}
+ssz_types = { workspace = true }
+tree_hash = { workspace = true }
+
