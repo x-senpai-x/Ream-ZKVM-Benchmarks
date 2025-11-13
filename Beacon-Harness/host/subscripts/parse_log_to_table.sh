@@ -1,9 +1,16 @@
 #!/bin/bash
 
 OPERATION=$1
+MODE=${2:-execute}  # Default to 'execute' if not provided
 
-LOG_FILE="logs/execution_$OPERATION.log"
-OUTPUT_FILE="summaries/summary_$OPERATION.md"
+LOG_FILE="logs/${MODE}_$OPERATION.log"
+
+# For prove mode, include MODE prefix; for execute mode, keep original naming
+if [ "$MODE" = "prove" ]; then
+    OUTPUT_FILE="summaries/prove_summary_$OPERATION.md"
+else
+    OUTPUT_FILE="summaries/summary_$OPERATION.md"
+fi
 
 # Determine the path to timinganalysis.py relative to this script
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

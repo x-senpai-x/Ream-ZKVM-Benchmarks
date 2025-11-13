@@ -256,8 +256,12 @@ $(addprefix run-block-, $(BLOCK_OPERATIONS)): run-block-%: $(EXTRACT_DIR)
 		exit 1; \
 	fi
 	@echo "Execution complete for block $* using $(ZKVM)."
-	@$(PARSE_SCRIPT) $(ZKVM)_block_$*
-	@$(SORT_SCRIPT) $(SUMMARIES_DIR)/summary_$(ZKVM)_block_$*.md
+	@$(PARSE_SCRIPT) $(ZKVM)_block_$* $(MODE)
+	@if [ "$(MODE)" = "prove" ]; then \
+		$(SORT_SCRIPT) $(SUMMARIES_DIR)/prove_summary_$(ZKVM)_block_$*.md; \
+	else \
+		$(SORT_SCRIPT) $(SUMMARIES_DIR)/summary_$(ZKVM)_block_$*.md; \
+	fi
 
 $(addprefix run-epoch-, $(EPOCH_OPERATIONS)): run-epoch-%: $(EXTRACT_DIR)
 	@mkdir -p $(LOGS_DIR)
@@ -315,8 +319,12 @@ $(addprefix run-epoch-, $(EPOCH_OPERATIONS)): run-epoch-%: $(EXTRACT_DIR)
 		exit 1; \
 	fi
 	@echo "Execution complete for epoch $* using $(ZKVM)."
-	@$(PARSE_SCRIPT) $(ZKVM)_epoch_$*
-	@$(SORT_SCRIPT) $(SUMMARIES_DIR)/summary_$(ZKVM)_epoch_$*.md
+	@$(PARSE_SCRIPT) $(ZKVM)_epoch_$* $(MODE)
+	@if [ "$(MODE)" = "prove" ]; then \
+		$(SORT_SCRIPT) $(SUMMARIES_DIR)/prove_summary_$(ZKVM)_epoch_$*.md; \
+	else \
+		$(SORT_SCRIPT) $(SUMMARIES_DIR)/summary_$(ZKVM)_epoch_$*.md; \
+	fi
 
 clean:
 	@echo "Cleaning up downloaded/execution files..."
