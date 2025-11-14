@@ -1,0 +1,4 @@
+| Operation | Test Case | Read Pre-State SSZ | Read Pre-State SSZ Time | Deserialize Pre-State SSZ | Deserialize Pre-State SSZ Time | Read Operation Input | Read Operation Input Time | Process | Process Time | Merkleize | Merkleize Time | Commit | Commit Time | Total Cycles | Execution Time | Execution Time Host Call |
+|-----------|-----------|--------------------|-------------------------|---------------------------|--------------------------------|----------------------|---------------------------|---------|--------------|-----------|----------------|--------|-------------|--------------|----------------|--------------------------|
+eth1_data_reset | eth1_vote_no_reset | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 952919839 | 0 | 54.828284917 |
+eth1_data_reset | eth1_vote_reset | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 952663666 | 0 | 53.635902083 |

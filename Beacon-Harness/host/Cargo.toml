@@ -12,7 +12,7 @@ path = "src/bin/main.rs"
 #zkvms
 risc0-zkvm = { version = "3.0.3", optional = true }
 sp1-sdk = { version = "5.2.2", optional = true }
-pico-sdk = { git = "https://github.com/brevis-network/pico", tag = "v1.1.6", optional = true}
+pico-sdk = { git = "https://github.com/brevis-network/pico", tag = "v1.1.8", optional = true}
 jolt-sdk = { git = "https://github.com/a16z/jolt", features = ["host"], optional = true }
 consenjolt = { path = "../guest/jolt", optional = true }
 

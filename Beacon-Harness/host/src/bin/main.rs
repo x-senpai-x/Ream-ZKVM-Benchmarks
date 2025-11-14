@@ -758,7 +758,10 @@ fn run_pico_test<T: OperationHandler>(
 
             info!("Execution time: {:?}", execution_time);
             info!("execution-time-host-call: {}", execution_time.as_secs_f64());
-            info!("Execution cycles: {}", cycles);
+
+            // Get total cycles from the last emulation report
+            let total_cycles = cycles.last().map(|report| report.current_cycle).unwrap_or(0);
+            info!("Execution cycles: {}", total_cycles);
             info!("[{}] Test case: {}", operation, test_case);
 
             // Parse output - Pico returns 8 bytes prefix followed by 32 bytes state root

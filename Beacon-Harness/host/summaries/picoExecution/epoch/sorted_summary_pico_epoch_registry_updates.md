@@ -1,0 +1,6 @@
+| Operation | Test Case | Read Pre-State SSZ | Read Pre-State SSZ Time | Deserialize Pre-State SSZ | Deserialize Pre-State SSZ Time | Read Operation Input | Read Operation Input Time | Process | Process Time | Merkleize | Merkleize Time | Commit | Commit Time | Total Cycles | Execution Time | Execution Time Host Call |
+|-----------|-----------|--------------------|-------------------------|---------------------------|--------------------------------|----------------------|---------------------------|---------|--------------|-----------|----------------|--------|-------------|--------------|----------------|--------------------------|
+registry_updates | activation_queue_efficiency_min | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 951592478 | 0 | 50.21935325 |
+registry_updates | activation_queue_eligibility__greater_than_min_activation_balance | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 951592538 | 0 | 51.604213 |
+registry_updates | activation_queue_eligibility__min_activation_balance_compounding_creds | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 951592538 | 0 | 55.298059917 |
+registry_updates | activation_queue_no_activation_no_finality | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 0 | 0s | 951592540 | 0 | 53.638988167 |
